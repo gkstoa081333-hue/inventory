@@ -836,7 +836,8 @@ function saveHistEdit() {
   const newTs = dtVal ? new Date(dtVal).getTime() : null;
   const newTime = dtVal ? new Date(dtVal).toLocaleString('ko-KR',
     {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : null;
-  const data = {
+
+  const newData = {
     name:    document.getElementById('heName').value.trim(),
     amount:  parseInt(document.getElementById('heAmount').value) || 0,
     type:    document.getElementById('heType').value,
@@ -844,8 +845,44 @@ function saveHistEdit() {
     purpose: document.getElementById('hePurpose').value.trim(),
     ...(newTs && { ts: newTs, time: newTime }),
   };
-  if (!data.name) { alert('품명을 입력해주세요.'); return; }
-  fbUpdate(fbRef(db, 'history/' + key), data);
+  if (!newData.name) { alert('품명을 입력해주세요.'); return; }
+
+  // ── 재고 수량 재계산 ──────────────────────────────────────────
+  // 원본 이력 찾기
+  const orig = historyData.find(h => h._key === key);
+  if (orig) {
+    // 해당 품목 찾기 (품명으로 매칭)
+    const targetName = newData.name || orig.name;
+    const item = items.find(i => i.name === targetName);
+
+    if (item) {
+      let qtyDelta = 0;
+
+      // 1) 기존 이력이 재고에 미친 영향 되돌리기
+      if (orig.type === 'out') qtyDelta += (orig.amount || 0);      // 출고였으면 되돌림(+)
+      if (orig.type === 'in')  qtyDelta -= (orig.amount || 0);      // 입고였으면 되돌림(-)
+
+      // 2) 새 이력 반영
+      if (newData.type === 'out') qtyDelta -= (newData.amount || 0); // 새 출고(-)
+      if (newData.type === 'in')  qtyDelta += (newData.amount || 0); // 새 입고(+)
+
+      const newQty = Math.max(0, (item.qty || 0) + qtyDelta);
+
+      if (qtyDelta !== 0) {
+        const confirm_msg = `재고도 함께 변경됩니다.
+
+품목: ${item.name}
+현재 재고: ${item.qty}
+변경 후 재고: ${newQty}
+
+계속하시겠습니까?`;
+        if (!confirm(confirm_msg)) return;
+        fbUpdate(fbRef(db, 'items/' + item._key), { qty: newQty });
+      }
+    }
+  }
+
+  fbUpdate(fbRef(db, 'history/' + key), newData);
   closeModal('histEditModal');
 }
 
