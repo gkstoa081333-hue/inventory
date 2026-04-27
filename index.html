@@ -847,47 +847,52 @@ function saveHistEdit() {
   };
   if (!newData.name) { alert('품명을 입력해주세요.'); return; }
 
-  // ── 재고 수량 재계산 ──────────────────────────────────────────
-  // 원본 이력 찾기
+  // ── 전체 이력 기반 재고 재계산 ────────────────────────────────
   const orig = historyData.find(h => h._key === key);
-  if (orig) {
-    // 해당 품목 찾기 (품명으로 매칭)
-    const targetName = newData.name || orig.name;
-    const item = items.find(i => i.name === targetName);
+  const affectedNames = new Set();
+  if (orig && orig.name) affectedNames.add(orig.name);
+  if (newData.name) affectedNames.add(newData.name);
 
-    if (item) {
-      let qtyDelta = 0;
+  // 수정 내용을 메모리에 반영한 가상 이력 생성
+  const virtualHistory = historyData.map(h =>
+    h._key === key ? { ...h, ...newData } : h
+  );
 
-      // 1) 기존 이력이 재고에 미친 영향 되돌리기
-      if (orig.type === 'out') qtyDelta += (orig.amount || 0);      // 출고였으면 되돌림(+)
-      if (orig.type === 'in')  qtyDelta -= (orig.amount || 0);      // 입고였으면 되돌림(-)
+  // 영향받는 각 품목의 수량을 전체 이력으로 재계산
+  const updates = [];
+  affectedNames.forEach(name => {
+    const item = items.find(i => i.name === name);
+    if (!item) return;
 
-      // 2) 새 이력 반영
-      if (newData.type === 'out') qtyDelta -= (newData.amount || 0); // 새 출고(-)
-      if (newData.type === 'in')  qtyDelta += (newData.amount || 0); // 새 입고(+)
+    const addQty = virtualHistory
+      .filter(h => h.name === name && h.type === 'add')
+      .reduce((sum, h) => sum + (h.amount || 0), 0);
+    const inQty = virtualHistory
+      .filter(h => h.name === name && h.type === 'in')
+      .reduce((sum, h) => sum + (h.amount || 0), 0);
+    const outQty = virtualHistory
+      .filter(h => h.name === name && h.type === 'out')
+      .reduce((sum, h) => sum + (h.amount || 0), 0);
 
-      const newQty = Math.max(0, (item.qty || 0) + qtyDelta);
-
-      if (qtyDelta !== 0) {
-        const confirm_msg = `재고도 함께 변경됩니다.
-
-품목: ${item.name}
-현재 재고: ${item.qty}
-변경 후 재고: ${newQty}
-
-계속하시겠습니까?`;
-        if (!confirm(confirm_msg)) return;
-        fbUpdate(fbRef(db, 'items/' + item._key), { qty: newQty });
-      }
+    const calcQty = Math.max(0, addQty + inQty - outQty);
+    if (calcQty !== item.qty) {
+      updates.push({ item, calcQty });
     }
+  });
+
+  if (updates.length > 0) {
+    const lines = updates.map(u =>
+      `• ${u.item.name}: ${u.item.qty}개 → ${u.calcQty}개`).join('\n');
+    if (!confirm(`이력 수정 후 재고가 변경됩니다.\n\n${lines}\n\n계속하시겠습니까?`)) return;
+    updates.forEach(u => {
+      fbUpdate(fbRef(db, 'items/' + u.item._key), { qty: u.calcQty });
+    });
   }
 
   fbUpdate(fbRef(db, 'history/' + key), newData);
   closeModal('histEditModal');
 }
 
-// ── 암호 관련 ─────────────────────────────────────────────────
-const ADMIN_PW_KEY = 'adminPw_gongju';
 
 function getAdminPw() {
   return localStorage.getItem(ADMIN_PW_KEY) || '';
