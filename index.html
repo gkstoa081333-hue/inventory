@@ -711,13 +711,11 @@ function saveItem() {
   };
   if(key) {
     fbUpdate(fbRef(db,'items/'+key),data);
-    addHistoryToFB('in',name,0,data.unit||'','','품목 수정','');
+    // 품목 정보 수정은 이력에 별도 기록하지 않음 (수량 변경이 아니므로)
   } else {
     fbPush(fbRef(db,'items'),data);
-    addHistoryToFB('add',name,data.qty,data.unit,'','신규 추가','');
-    if(data.qty > 0) {
-      addHistoryToFB('in',name,data.qty,data.unit,data.manager||'','신규 품목 등록','');
-    }
+    // 신규 등록 시 이력은 'add' 타입 1개만 기록 (in과 중복 방지)
+    addHistoryToFB('add',name,data.qty,data.unit||'',data.manager||'','신규 품목 등록','');
   }
   closeModal('addModal');
 }
@@ -860,14 +858,18 @@ function saveHistEdit() {
   );
 
   // 영향받는 각 품목의 수량을 전체 이력으로 재계산
+  // add = 신규등록 초기수량, in = 입고증가, out = 출고감소
   const updates = [];
   affectedNames.forEach(name => {
     const item = items.find(i => i.name === name);
     if (!item) return;
 
-    const addQty = virtualHistory
+    // 가장 최근 'add' 이력의 수량을 초기값으로 사용
+    const addEntries = virtualHistory
       .filter(h => h.name === name && h.type === 'add')
-      .reduce((sum, h) => sum + (h.amount || 0), 0);
+      .sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const initQty = addEntries.length > 0 ? (addEntries[0].amount || 0) : 0;
+
     const inQty = virtualHistory
       .filter(h => h.name === name && h.type === 'in')
       .reduce((sum, h) => sum + (h.amount || 0), 0);
@@ -875,7 +877,7 @@ function saveHistEdit() {
       .filter(h => h.name === name && h.type === 'out')
       .reduce((sum, h) => sum + (h.amount || 0), 0);
 
-    const calcQty = Math.max(0, addQty + inQty - outQty);
+    const calcQty = Math.max(0, initQty + inQty - outQty);
     if (calcQty !== item.qty) {
       updates.push({ item, calcQty });
     }
