@@ -366,7 +366,12 @@
     <div class="form-group"><label class="form-label">팀명</label><input class="form-input" id="fTeam" placeholder="예: 총무팀, 개발팀"></div>
     <div class="form-group"><label class="form-label">담당자</label><div class="who-wrap"><input class="form-input" id="fManager" placeholder="담당자 이름을 입력하세요"></div></div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">현재 수량</label><input class="form-input" id="fQty" type="number" min="0" placeholder="0"></div>
+      <div class="form-group" id="fQtyGroup">
+        <label class="form-label">현재 수량</label>
+        <input class="form-input" id="fQty" type="number" min="0" placeholder="0">
+        <div id="fQtyReadonly" style="display:none;padding:8px 12px;background:var(--surface2);border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--text2);border:1px solid var(--border)"></div>
+        <div id="fQtyNote" style="display:none;font-size:11px;color:var(--text3);margin-top:4px">📌 수량은 입고/출고를 통해 자동 계산됩니다</div>
+      </div>
       <div class="form-group"><label class="form-label">최소 재고 기준</label><input class="form-input" id="fMinQty" type="number" min="0" placeholder="5"></div>
     </div>
     <div class="form-group"><label class="form-label">비고</label><input class="form-input" id="fNote" placeholder="특이사항"></div>
@@ -377,6 +382,25 @@
   </div>
 </div>
 
+<!-- 품목 수정 암호 확인 모달 -->
+<div class="modal-overlay" id="editAuthModal">
+  <div class="modal">
+    <div class="modal-title">🔒 관리자 암호 확인</div>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">품목 정보 수정은 관리자 암호가 필요합니다.</p>
+    <div class="form-group">
+      <label class="form-label">암호 입력</label>
+      <div class="pw-input-wrap">
+        <input class="form-input" id="editAuthPwInput" type="password" placeholder="관리자 암호" style="width:100%;padding-right:36px">
+        <button class="pw-toggle" onclick="togglePw('editAuthPwInput', this)">👁️</button>
+      </div>
+    </div>
+    <div id="editAuthPwError" style="font-size:12px;color:var(--danger);margin-top:-6px;margin-bottom:8px;display:none">암호가 틀렸습니다.</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" onclick="confirmEditAuth()">확인</button>
+      <button class="btn btn-ghost" onclick="closeModal('editAuthModal')">취소</button>
+    </div>
+  </div>
+</div>
 <!-- TAKE MODAL -->
 <div class="modal-overlay" id="takeModal">
   <div class="modal">
@@ -682,10 +706,39 @@ function openAddModal() {
   ['editId','fName','fTeam','fManager','fNote'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('fQty').value=0;
   document.getElementById('fMinQty').value=5;
+  // 신규 추가 모드: 수량 입력 가능
+  document.getElementById('fQty').style.display = 'block';
+  document.getElementById('fQtyReadonly').style.display = 'none';
+  document.getElementById('fQtyNote').style.display = 'none';
   document.getElementById('addModal').classList.add('active');
   setTimeout(()=>document.getElementById('fName').focus(),100);
 }
+let pendingEditKey = '';
+
 function openEditModal(key) {
+  pendingEditKey = key;
+  const pw = getAdminPw();
+  if (pw) {
+    document.getElementById('editAuthPwInput').value = '';
+    document.getElementById('editAuthPwError').style.display = 'none';
+    document.getElementById('editAuthModal').classList.add('active');
+    setTimeout(() => document.getElementById('editAuthPwInput').focus(), 100);
+  } else {
+    openEditForm(key);
+  }
+}
+
+function confirmEditAuth() {
+  const input = document.getElementById('editAuthPwInput').value;
+  if (input !== getAdminPw()) {
+    document.getElementById('editAuthPwError').style.display = 'block';
+    return;
+  }
+  closeModal('editAuthModal');
+  openEditForm(pendingEditKey);
+}
+
+function openEditForm(key) {
   const item=items.find(i=>i._key===key);
   if(!item) return;
   document.getElementById('modalTitle').textContent='품목 수정';
@@ -693,29 +746,42 @@ function openEditModal(key) {
   document.getElementById('fName').value=item.name||'';
   document.getElementById('fTeam').value=item.team||'';
   document.getElementById('fManager').value=item.manager||'';
-  document.getElementById('fQty').value=item.qty||0;
   document.getElementById('fMinQty').value=item.minQty||0;
   document.getElementById('fNote').value=item.note||'';
+  // 수정 모드: 수량은 읽기전용(이력 기반 자동계산)으로 표시
+  document.getElementById('fQty').style.display = 'none';
+  document.getElementById('fQtyReadonly').style.display = 'block';
+  document.getElementById('fQtyReadonly').textContent = (item.qty||0) + '개';
+  document.getElementById('fQtyNote').style.display = 'block';
   document.getElementById('addModal').classList.add('active');
 }
 function saveItem() {
   const name=document.getElementById('fName').value.trim();
   if(!name){alert('품명을 입력해주세요.');return;}
   const key=document.getElementById('editId').value;
-  const data={
-    name, team:document.getElementById('fTeam').value.trim(),
-    manager:document.getElementById('fManager').value.trim(),
-    qty:parseInt(document.getElementById('fQty').value)||0,
-    minQty:parseInt(document.getElementById('fMinQty').value)||0,
-    note:document.getElementById('fNote').value.trim()
-  };
   if(key) {
-    fbUpdate(fbRef(db,'items/'+key),data);
-    // 품목 정보 수정은 이력에 별도 기록하지 않음 (수량 변경이 아니므로)
+    // 수정 모드: 수량은 변경하지 않음 (이력 기반 자동계산 유지)
+    const item = items.find(i=>i._key===key);
+    const updateData = {
+      name,
+      team: document.getElementById('fTeam').value.trim(),
+      manager: document.getElementById('fManager').value.trim(),
+      minQty: parseInt(document.getElementById('fMinQty').value)||0,
+      note: document.getElementById('fNote').value.trim()
+    };
+    fbUpdate(fbRef(db,'items/'+key), updateData);
   } else {
+    // 신규 추가 모드
+    const data={
+      name, team:document.getElementById('fTeam').value.trim(),
+      manager:document.getElementById('fManager').value.trim(),
+      qty:parseInt(document.getElementById('fQty').value)||0,
+      minQty:parseInt(document.getElementById('fMinQty').value)||0,
+      note:document.getElementById('fNote').value.trim()
+    };
     fbPush(fbRef(db,'items'),data);
     // 신규 등록 시 이력은 'add' 타입 1개만 기록 (in과 중복 방지)
-    addHistoryToFB('add',name,data.qty,data.unit||'',data.manager||'','신규 품목 등록','');
+    addHistoryToFB('add',name,data.qty,'',data.manager||'','신규 품목 등록','');
   }
   closeModal('addModal');
 }
@@ -1180,7 +1246,7 @@ document.getElementById('histDateTo').addEventListener('change',renderHistory);
 document.querySelectorAll('.modal-overlay').forEach(el=>
   el.addEventListener('click',e=>{if(e.target===el)closeModal(el.id);}));
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape')['addModal','takeModal','restoreModal'].forEach(id=>closeModal(id));
+  if(e.key==='Escape')['addModal','takeModal','restoreModal','editAuthModal'].forEach(id=>closeModal(id));
 });
 </script>
 
