@@ -411,6 +411,7 @@
 
 <script>
 // ── 전역 상태 ─────────────────────────────────────────────────
+const ADMIN_PW_KEY = 'gongju_inventory_admin_pw';
 let items = [];
 let historyData = [];
 let sortKey = 'name', sortAsc = true;
@@ -710,7 +711,7 @@ function saveItem() {
   };
   if(key) {
     fbUpdate(fbRef(db,'items/'+key),data);
-    addHistoryToFB('add',name,0,data.unit,'','수정','');
+    addHistoryToFB('in',name,0,data.unit||'','','품목 수정','');
   } else {
     fbPush(fbRef(db,'items'),data);
     addHistoryToFB('add',name,data.qty,data.unit,'','신규 추가','');
