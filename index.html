@@ -293,13 +293,16 @@
 
   <div class="tab-panel active" id="tab-inventory">
     <div class="controls">
-      <input type="text" class="search-box" id="searchInput" placeholder="🔍 품명 검색...">
+      <input type="text" class="search-box" id="searchInput" placeholder="🔍 품명, 담당자 검색...">
       <select id="filterStatus">
         <option value="">전체 상태</option>
         <option value="ok">정상</option>
         <option value="warn">부족</option>
         <option value="out">없음</option>
       </select>
+      <select id="filterTeam"><option value="">전체 팀</option></select>
+      <select id="filterManager"><option value="">전체 담당자</option></select>
+      <button class="btn btn-ghost" onclick="resetInventoryFilters()" style="font-size:12px;padding:7px 12px">초기화</button>
       <button class="btn btn-primary" onclick="openAddModal()">+ 품목 추가</button>
       <button class="btn btn-excel" onclick="exportExcel()">📊 엑셀 다운로드</button>
     </div>
@@ -499,12 +502,29 @@ function clearHistoryInFB() {
 // ── 렌더 ─────────────────────────────────────────────────────
 function render() {
   const search = (document.getElementById('searchInput')?.value||'').toLowerCase();
-  const fSt = document.getElementById('filterStatus')?.value||'';
+  const fSt   = document.getElementById('filterStatus')?.value||'';
+  const fTeam = document.getElementById('filterTeam')?.value||'';
+  const fMgr  = document.getElementById('filterManager')?.value||'';
 
   let list = [...items];
   if (search) list = list.filter(i=>
-    (i.name||'').toLowerCase().includes(search));
-  if (fSt)  list = list.filter(i=>getStatus(i)===fSt);
+    (i.name||'').toLowerCase().includes(search) ||
+    (i.manager||'').toLowerCase().includes(search));
+  if (fSt)   list = list.filter(i => getStatus(i) === fSt);
+  if (fTeam) list = list.filter(i => (i.team||'') === fTeam);
+  if (fMgr)  list = list.filter(i => (i.manager||'') === fMgr);
+
+  // 팀 & 담당자 드롭다운 갱신
+  const teamSel = document.getElementById('filterTeam');
+  const mgrSel  = document.getElementById('filterManager');
+  const prevTeam = teamSel?.value||'';
+  const prevMgr  = mgrSel?.value||'';
+  const teams = [...new Set(items.map(i=>i.team).filter(Boolean))].sort();
+  const mgrs  = [...new Set(items.map(i=>i.manager).filter(Boolean))].sort();
+  if (teamSel) teamSel.innerHTML = '<option value="">전체 팀</option>' +
+    teams.map(t=>`<option value="${t}"${t===prevTeam?' selected':''}}>${t}</option>`).join('');
+  if (mgrSel) mgrSel.innerHTML = '<option value="">전체 담당자</option>' +
+    mgrs.map(m=>`<option value="${m}"${m===prevMgr?' selected':''}}>${m}</option>`).join('');
 
   list.sort((a,b)=>{
     let av=a[sortKey]??'', bv=b[sortKey]??'';
@@ -561,6 +581,14 @@ function histSortBy(key) {
   if (histSortKey === key) histSortAsc = !histSortAsc;
   else { histSortKey = key; histSortAsc = key !== 'ts'; }
   renderHistory();
+}
+
+function resetInventoryFilters() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('filterTeam').value = '';
+  document.getElementById('filterManager').value = '';
+  render();
 }
 
 function resetHistFilters() {
@@ -789,18 +817,32 @@ function openHistEditForm(key) {
   document.getElementById('heType').value = h.type || 'out';
   document.getElementById('heWho').value = h.who || '';
   document.getElementById('hePurpose').value = h.purpose || '';
+  // 일시 변환 (ts → datetime-local 형식)
+  if (h.ts) {
+    const d = new Date(h.ts);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+      .toISOString().slice(0, 16);
+    document.getElementById('heDateTime').value = local;
+  } else {
+    document.getElementById('heDateTime').value = '';
+  }
   document.getElementById('histEditModal').classList.add('active');
   setTimeout(() => document.getElementById('heName').focus(), 100);
 }
 
 function saveHistEdit() {
   const key = document.getElementById('histEditKey').value;
+  const dtVal = document.getElementById('heDateTime').value;
+  const newTs = dtVal ? new Date(dtVal).getTime() : null;
+  const newTime = dtVal ? new Date(dtVal).toLocaleString('ko-KR',
+    {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : null;
   const data = {
     name:    document.getElementById('heName').value.trim(),
     amount:  parseInt(document.getElementById('heAmount').value) || 0,
     type:    document.getElementById('heType').value,
     who:     document.getElementById('heWho').value.trim(),
     purpose: document.getElementById('hePurpose').value.trim(),
+    ...(newTs && { ts: newTs, time: newTime }),
   };
   if (!data.name) { alert('품명을 입력해주세요.'); return; }
   fbUpdate(fbRef(db, 'history/' + key), data);
@@ -991,6 +1033,8 @@ updateDate();setInterval(updateDate,60000);
 
 document.getElementById('searchInput').addEventListener('input',render);
 document.getElementById('filterStatus').addEventListener('change',render);
+document.getElementById('filterTeam').addEventListener('change',render);
+document.getElementById('filterManager').addEventListener('change',render);
 document.getElementById('histSearch').addEventListener('input',renderHistory);
 document.getElementById('histType').addEventListener('change',renderHistory);
 document.getElementById('histWhoFilter').addEventListener('change',renderHistory);
@@ -1111,6 +1155,10 @@ document.addEventListener('keydown',e=>{
     <div class="form-group">
       <label class="form-label">목적 / 메모</label>
       <input class="form-input" id="hePurpose" style="width:100%" placeholder="사용 목적 또는 메모">
+    </div>
+    <div class="form-group">
+      <label class="form-label">일시</label>
+      <input class="form-input" id="heDateTime" type="datetime-local" style="width:100%">
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" style="flex:1" onclick="saveHistEdit()">저장</button>
