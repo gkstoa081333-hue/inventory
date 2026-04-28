@@ -366,105 +366,13 @@
     <div class="form-group"><label class="form-label">팀명</label><input class="form-input" id="fTeam" placeholder="예: 총무팀, 개발팀"></div>
     <div class="form-group"><label class="form-label">담당자</label><div class="who-wrap"><input class="form-input" id="fManager" placeholder="담당자 이름을 입력하세요"></div></div>
     <div class="form-row">
-      <div class="form-group" id="fQtyGroup">
-        <label class="form-label">현재 수량</label>
-        <input class="form-input" id="fQty" type="number" min="0" placeholder="0">
-        <div id="fQtyReadonly" style="display:none;padding:8px 12px;background:var(--surface2);border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--text2);border:1px solid var(--border)"></div>
-        <div id="fQtyNote" style="display:none;font-size:11px;color:var(--text3);margin-top:4px">📌 수량은 입고/출고를 통해 자동 계산됩니다</div>
-      </div>
+      <div class="form-group"><label class="form-label">현재 수량</label><input class="form-input" id="fQty" type="number" min="0" placeholder="0"></div>
       <div class="form-group"><label class="form-label">최소 재고 기준</label><input class="form-input" id="fMinQty" type="number" min="0" placeholder="5"></div>
     </div>
     <div class="form-group"><label class="form-label">비고</label><input class="form-input" id="fNote" placeholder="특이사항"></div>
     <div class="modal-actions">
       <button class="btn btn-primary" style="flex:1" onclick="saveItem()">저장</button>
       <button class="btn btn-ghost" onclick="closeModal('addModal')">취소</button>
-    </div>
-  </div>
-</div>
-
-<!-- 품목 수정 암호 확인 모달 -->
-<div class="modal-overlay" id="editAuthModal">
-  <div class="modal">
-    <div class="modal-title">🔒 관리자 암호 확인</div>
-    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">품목 정보 수정은 관리자 암호가 필요합니다.</p>
-    <div class="form-group">
-      <label class="form-label">암호 입력</label>
-      <div class="pw-input-wrap">
-        <input class="form-input" id="editAuthPwInput" type="password" placeholder="관리자 암호" style="width:100%;padding-right:36px">
-        <button class="pw-toggle" onclick="togglePw('editAuthPwInput', this)">👁️</button>
-      </div>
-    </div>
-    <div id="editAuthPwError" style="font-size:12px;color:var(--danger);margin-top:-6px;margin-bottom:8px;display:none">암호가 틀렸습니다.</div>
-    <div class="modal-actions">
-      <button class="btn btn-primary" style="flex:1" onclick="confirmEditAuth()">확인</button>
-      <button class="btn btn-ghost" onclick="closeModal('editAuthModal')">취소</button>
-    </div>
-  </div>
-</div>
-<!-- 이력 삭제 암호 확인 모달 -->
-<div class="modal-overlay" id="delHistAuthModal">
-  <div class="modal">
-    <div class="modal-title">🔒 삭제 확인 — 관리자 암호</div>
-    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">사용 이력 삭제는 관리자 암호가 필요합니다.</p>
-    <div class="form-group">
-      <label class="form-label">암호 입력</label>
-      <div class="pw-input-wrap">
-        <input class="form-input" id="delHistPwInput" type="password" placeholder="관리자 암호" style="width:100%;padding-right:36px">
-        <button class="pw-toggle" onclick="togglePw('delHistPwInput',this)">👁️</button>
-      </div>
-    </div>
-    <div id="delHistPwError" style="font-size:12px;color:var(--danger);margin-top:-6px;margin-bottom:8px;display:none">암호가 틀렸습니다.</div>
-    <div class="modal-actions">
-      <button class="btn btn-primary" style="flex:1;background:var(--danger)" onclick="confirmDelHistAuth()">삭제 확인</button>
-      <button class="btn btn-ghost" onclick="closeModal('delHistAuthModal')">취소</button>
-    </div>
-  </div>
-</div>
-
-<!-- 수량 수동 수정 모달 (관리자 전용) -->
-<div class="modal-overlay" id="qtyManualModal">
-  <div class="modal">
-    <div class="modal-title">✏️ 수량 수동 수정 <span style="font-size:11px;color:var(--danger);font-weight:400">(관리자 전용)</span></div>
-    <input type="hidden" id="qtyManualKey">
-    <div id="qtyManualItemName" style="font-size:13px;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--surface2);border-radius:7px"></div>
-    <div class="form-group">
-      <label class="form-label">현재 재고 (자동계산)</label>
-      <div id="qtyManualCurrent" style="padding:8px 12px;background:var(--surface2);border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--text2);border:1px solid var(--border)"></div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">수정할 수량 <span class="required">*</span></label>
-      <input class="form-input" id="qtyManualInput" type="number" min="0" placeholder="0">
-    </div>
-    <div class="form-group">
-      <label class="form-label">수정 사유 <span class="required">*</span></label>
-      <input class="form-input" id="qtyManualReason" placeholder="예: 실물 재고 확인 후 조정">
-    </div>
-    <div style="font-size:11px;color:var(--warn);padding:8px 10px;background:rgba(234,179,8,.08);border-radius:6px;margin-bottom:12px">
-      ⚠️ 수동 수정 시 이력에 '조정' 기록이 남고, 자동계산보다 수동값이 우선됩니다.
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-primary" style="flex:1" onclick="saveQtyManual()">수정 저장</button>
-      <button class="btn btn-ghost" onclick="closeModal('qtyManualModal')">취소</button>
-    </div>
-  </div>
-</div>
-
-<!-- 수량 수동수정 암호 확인 모달 -->
-<div class="modal-overlay" id="qtyManualAuthModal">
-  <div class="modal">
-    <div class="modal-title">🔒 수량 수동 수정 — 관리자 암호</div>
-    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">수량 수동 수정은 관리자 암호가 필요합니다.</p>
-    <div class="form-group">
-      <label class="form-label">암호 입력</label>
-      <div class="pw-input-wrap">
-        <input class="form-input" id="qtyManualPwInput" type="password" placeholder="관리자 암호" style="width:100%;padding-right:36px">
-        <button class="pw-toggle" onclick="togglePw('qtyManualPwInput',this)">👁️</button>
-      </div>
-    </div>
-    <div id="qtyManualPwError" style="font-size:12px;color:var(--danger);margin-top:-6px;margin-bottom:8px;display:none">암호가 틀렸습니다.</div>
-    <div class="modal-actions">
-      <button class="btn btn-primary" style="flex:1" onclick="confirmQtyManualAuth()">확인</button>
-      <button class="btn btn-ghost" onclick="closeModal('qtyManualAuthModal')">취소</button>
     </div>
   </div>
 </div>
@@ -503,7 +411,6 @@
 
 <script>
 // ── 전역 상태 ─────────────────────────────────────────────────
-const ADMIN_PW_KEY = 'gongju_inventory_admin_pw';
 let items = [];
 let historyData = [];
 let sortKey = 'name', sortAsc = true;
@@ -635,10 +542,7 @@ function render() {
       </td>
       <td>${item.team||'-'}</td>
       <td>${item.manager||'-'}</td>
-      <td class="mono" style="font-size:15px;font-weight:700;color:${st==='out'?'var(--danger)':st==='warn'?'var(--warn)':'var(--ok)'}">
-        ${item.qty}
-        <button onclick="openQtyManualModal('${item._key}')" title="수량 수동 수정 (관리자)" style="margin-left:6px;font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--text3);cursor:pointer;vertical-align:middle">✏️</button>
-      </td>
+      <td class="mono" style="font-size:15px;font-weight:700;color:${st==='out'?'var(--danger)':st==='warn'?'var(--warn)':'var(--ok)'}">${item.qty}</td>
       <td class="mono">${item.minQty||0}</td>
       <td>${statusBadge[st]}</td>
       <td><div class="action-btns">
@@ -777,39 +681,10 @@ function openAddModal() {
   ['editId','fName','fTeam','fManager','fNote'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('fQty').value=0;
   document.getElementById('fMinQty').value=5;
-  // 신규 추가 모드: 수량 입력 가능
-  document.getElementById('fQty').style.display = 'block';
-  document.getElementById('fQtyReadonly').style.display = 'none';
-  document.getElementById('fQtyNote').style.display = 'none';
   document.getElementById('addModal').classList.add('active');
   setTimeout(()=>document.getElementById('fName').focus(),100);
 }
-let pendingEditKey = '';
-
 function openEditModal(key) {
-  pendingEditKey = key;
-  const pw = getAdminPw();
-  if (pw) {
-    document.getElementById('editAuthPwInput').value = '';
-    document.getElementById('editAuthPwError').style.display = 'none';
-    document.getElementById('editAuthModal').classList.add('active');
-    setTimeout(() => document.getElementById('editAuthPwInput').focus(), 100);
-  } else {
-    openEditForm(key);
-  }
-}
-
-function confirmEditAuth() {
-  const input = document.getElementById('editAuthPwInput').value;
-  if (input !== getAdminPw()) {
-    document.getElementById('editAuthPwError').style.display = 'block';
-    return;
-  }
-  closeModal('editAuthModal');
-  openEditForm(pendingEditKey);
-}
-
-function openEditForm(key) {
   const item=items.find(i=>i._key===key);
   if(!item) return;
   document.getElementById('modalTitle').textContent='품목 수정';
@@ -817,42 +692,31 @@ function openEditForm(key) {
   document.getElementById('fName').value=item.name||'';
   document.getElementById('fTeam').value=item.team||'';
   document.getElementById('fManager').value=item.manager||'';
+  document.getElementById('fQty').value=item.qty||0;
   document.getElementById('fMinQty').value=item.minQty||0;
   document.getElementById('fNote').value=item.note||'';
-  // 수정 모드: 수량은 읽기전용(이력 기반 자동계산)으로 표시
-  document.getElementById('fQty').style.display = 'none';
-  document.getElementById('fQtyReadonly').style.display = 'block';
-  document.getElementById('fQtyReadonly').textContent = (item.qty||0) + '개';
-  document.getElementById('fQtyNote').style.display = 'block';
   document.getElementById('addModal').classList.add('active');
 }
 function saveItem() {
   const name=document.getElementById('fName').value.trim();
   if(!name){alert('품명을 입력해주세요.');return;}
   const key=document.getElementById('editId').value;
+  const data={
+    name, team:document.getElementById('fTeam').value.trim(),
+    manager:document.getElementById('fManager').value.trim(),
+    qty:parseInt(document.getElementById('fQty').value)||0,
+    minQty:parseInt(document.getElementById('fMinQty').value)||0,
+    note:document.getElementById('fNote').value.trim()
+  };
   if(key) {
-    // 수정 모드: 수량은 변경하지 않음 (이력 기반 자동계산 유지)
-    const item = items.find(i=>i._key===key);
-    const updateData = {
-      name,
-      team: document.getElementById('fTeam').value.trim(),
-      manager: document.getElementById('fManager').value.trim(),
-      minQty: parseInt(document.getElementById('fMinQty').value)||0,
-      note: document.getElementById('fNote').value.trim()
-    };
-    fbUpdate(fbRef(db,'items/'+key), updateData);
+    fbUpdate(fbRef(db,'items/'+key),data);
+    addHistoryToFB('add',name,0,data.unit,'','수정','');
   } else {
-    // 신규 추가 모드
-    const data={
-      name, team:document.getElementById('fTeam').value.trim(),
-      manager:document.getElementById('fManager').value.trim(),
-      qty:parseInt(document.getElementById('fQty').value)||0,
-      minQty:parseInt(document.getElementById('fMinQty').value)||0,
-      note:document.getElementById('fNote').value.trim()
-    };
     fbPush(fbRef(db,'items'),data);
-    // 신규 등록 시 이력은 'add' 타입 1개만 기록 (in과 중복 방지)
-    addHistoryToFB('add',name,data.qty,'',data.manager||'','신규 품목 등록','');
+    addHistoryToFB('add',name,data.qty,data.unit,'','신규 추가','');
+    if(data.qty > 0) {
+      addHistoryToFB('in',name,data.qty,data.unit,data.manager||'','신규 품목 등록','');
+    }
   }
   closeModal('addModal');
 }
@@ -913,58 +777,8 @@ function deleteItem(key) {
   if(item) addHistoryToFB('del',item.name,item.qty,item.unit,'','삭제','');
   deleteItemFromFB(key);
 }
-// ── 이력 기반 재고 재계산 공통 함수 ──────────────────────────────
-function recalcQtyFromHistory(virtualHistory, nameSet) {
-  const updates = [];
-  nameSet.forEach(name => {
-    const item = items.find(i => i.name === name);
-    if (!item) return;
-    const addEntries = virtualHistory
-      .filter(h => h.name === name && h.type === 'add')
-      .sort((a, b) => (a.ts || 0) - (b.ts || 0));
-    const initQty = addEntries.length > 0 ? (addEntries[0].amount || 0) : 0;
-    const inQty  = virtualHistory.filter(h => h.name === name && h.type === 'in').reduce((s,h)=>s+(h.amount||0),0);
-    const outQty = virtualHistory.filter(h => h.name === name && h.type === 'out').reduce((s,h)=>s+(h.amount||0),0);
-    const calcQty = Math.max(0, initQty + inQty - outQty);
-    if (calcQty !== item.qty) updates.push({ item, calcQty });
-  });
-  return updates;
-}
-
-let pendingDelHistKey = '';
-
 function deleteHistory(key) {
-  pendingDelHistKey = key;
-  const pw = getAdminPw();
-  if (pw) {
-    document.getElementById('delHistPwInput').value = '';
-    document.getElementById('delHistPwError').style.display = 'none';
-    document.getElementById('delHistAuthModal').classList.add('active');
-    setTimeout(() => document.getElementById('delHistPwInput').focus(), 100);
-  } else {
-    if (!confirm('이 이력을 삭제하시겠습니까?')) return;
-    execDeleteHistory(key);
-  }
-}
-
-function confirmDelHistAuth() {
-  const input = document.getElementById('delHistPwInput').value;
-  if (input !== getAdminPw()) {
-    document.getElementById('delHistPwError').style.display = 'block';
-    return;
-  }
-  closeModal('delHistAuthModal');
-  if (!confirm('이 이력을 삭제하시겠습니까?')) return;
-  execDeleteHistory(pendingDelHistKey);
-}
-
-function execDeleteHistory(key) {
-  const target = historyData.find(h => h._key === key);
-  if (target && target.name && ['in','out','add'].includes(target.type)) {
-    const virtualHistory = historyData.filter(h => h._key !== key);
-    const updates = recalcQtyFromHistory(virtualHistory, new Set([target.name]));
-    updates.forEach(u => fbUpdate(fbRef(db,'items/'+u.item._key), {qty: u.calcQty}));
-  }
+  if(!confirm('이 이력을 삭제하시겠습니까?')) return;
   fbRemove(fbRef(db, 'history/' + key));
 }
 
@@ -1033,26 +847,49 @@ function saveHistEdit() {
   };
   if (!newData.name) { alert('품명을 입력해주세요.'); return; }
 
-  // ── 전체 이력 기반 재고 재계산 ────────────────────────────────
+  // ── delta 방식 재고 재계산 ────────────────────────────────────
+  // 재고에 영향주는 타입: out(출고 → -), in(입고 → +)
+  // add/del 타입은 재고 직접 수정이므로 delta 계산에서 제외
   const orig = historyData.find(h => h._key === key);
+
   const affectedNames = new Set();
   if (orig && orig.name) affectedNames.add(orig.name);
   if (newData.name) affectedNames.add(newData.name);
 
-  // 수정 내용을 메모리에 반영한 가상 이력 생성
-  const virtualHistory = historyData.map(h =>
-    h._key === key ? { ...h, ...newData } : h
-  );
+  const updates = [];
 
-  // 공통 함수로 재고 재계산
-  const updates = recalcQtyFromHistory(virtualHistory, affectedNames);
+  affectedNames.forEach(name => {
+    const item = items.find(i => i.name === name);
+    if (!item) return;
 
+    let delta = 0;
+
+    // 1) 기존 이력 되돌리기 (out/in 타입만)
+    if (orig && orig.name === name) {
+      if (orig.type === 'out') delta += (orig.amount || 0);  // 출고 되돌림 → +
+      if (orig.type === 'in')  delta -= (orig.amount || 0);  // 입고 되돌림 → -
+    }
+
+    // 2) 새 이력 반영 (out/in 타입만)
+    if (newData.name === name) {
+      if (newData.type === 'out') delta -= (newData.amount || 0); // 출고 → -
+      if (newData.type === 'in')  delta += (newData.amount || 0); // 입고 → +
+    }
+
+    // delta가 0이면 재고 변동 없음 → 업데이트 불필요
+    if (delta === 0) return;
+
+    const newQty = Math.max(0, item.qty + delta);
+    updates.push({ item, newQty });
+  });
+
+  // 재고 변동이 있는 경우에만 확인 팝업
   if (updates.length > 0) {
     const lines = updates.map(u =>
-      `• ${u.item.name}: ${u.item.qty}개 → ${u.calcQty}개`).join('\n');
-    if (!confirm(`이력 수정 후 재고가 변경됩니다.\n\n${lines}\n\n계속하시겠습니까?`)) return;
+      `• ${u.item.name}: ${u.item.qty}개 → ${u.newQty}개`).join('\n');
+    if (!confirm(`재고가 변경됩니다.\n\n${lines}\n\n계속하시겠습니까?`)) return;
     updates.forEach(u => {
-      fbUpdate(fbRef(db, 'items/' + u.item._key), { qty: u.calcQty });
+      fbUpdate(fbRef(db, 'items/' + u.item._key), { qty: u.newQty });
     });
   }
 
@@ -1119,61 +956,6 @@ function confirmClearHistory() {
   if (!confirm('전체 이력을 초기화하시겠습니까?')) return;
   clearHistoryInFB();
 }
-let pendingQtyManualKey = '';
-
-function openQtyManualModal(key) {
-  pendingQtyManualKey = key;
-  const pw = getAdminPw();
-  if (pw) {
-    document.getElementById('qtyManualPwInput').value = '';
-    document.getElementById('qtyManualPwError').style.display = 'none';
-    document.getElementById('qtyManualAuthModal').classList.add('active');
-    setTimeout(() => document.getElementById('qtyManualPwInput').focus(), 100);
-  } else {
-    openQtyManualForm(key);
-  }
-}
-
-function confirmQtyManualAuth() {
-  const input = document.getElementById('qtyManualPwInput').value;
-  if (input !== getAdminPw()) {
-    document.getElementById('qtyManualPwError').style.display = 'block';
-    return;
-  }
-  closeModal('qtyManualAuthModal');
-  openQtyManualForm(pendingQtyManualKey);
-}
-
-function openQtyManualForm(key) {
-  const item = items.find(i => i._key === key);
-  if (!item) return;
-  document.getElementById('qtyManualKey').value = key;
-  document.getElementById('qtyManualItemName').textContent = '📦 ' + item.name + (item.team ? '  |  ' + item.team : '');
-  document.getElementById('qtyManualCurrent').textContent = (item.qty || 0) + '개';
-  document.getElementById('qtyManualInput').value = item.qty || 0;
-  document.getElementById('qtyManualReason').value = '';
-  document.getElementById('qtyManualModal').classList.add('active');
-  setTimeout(() => document.getElementById('qtyManualInput').focus(), 100);
-}
-
-function saveQtyManual() {
-  const key = document.getElementById('qtyManualKey').value;
-  const newQty = parseInt(document.getElementById('qtyManualInput').value);
-  const reason = document.getElementById('qtyManualReason').value.trim();
-  if (isNaN(newQty) || newQty < 0) { alert('올바른 수량을 입력해주세요.'); return; }
-  if (!reason) { alert('수정 사유를 입력해주세요.'); return; }
-  const item = items.find(i => i._key === key);
-  if (!item) return;
-  const diff = newQty - (item.qty || 0);
-  // Firebase 재고 수동 업데이트
-  fbUpdate(fbRef(db, 'items/' + key), { qty: newQty, manualQty: true });
-  // 조정 이력 기록
-  addHistoryToFB('adjust', item.name, Math.abs(diff), item.unit || '', '관리자',
-    `수동 조정: ${item.qty}→${newQty} (${diff >= 0 ? '+' : ''}${diff}) / 사유: ${reason}`, '');
-  closeModal('qtyManualModal');
-  alert(`✅ ${item.name} 수량이 ${newQty}개로 수정되었습니다.`);
-}
-
 function closeModal(id){document.getElementById(id).classList.remove('active');}
 
 // ── 엑셀 다운로드 ─────────────────────────────────────────────
@@ -1399,7 +1181,7 @@ document.getElementById('histDateTo').addEventListener('change',renderHistory);
 document.querySelectorAll('.modal-overlay').forEach(el=>
   el.addEventListener('click',e=>{if(e.target===el)closeModal(el.id);}));
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape')['addModal','takeModal','restoreModal','editAuthModal','delHistAuthModal','qtyManualModal','qtyManualAuthModal'].forEach(id=>closeModal(id));
+  if(e.key==='Escape')['addModal','takeModal','restoreModal'].forEach(id=>closeModal(id));
 });
 </script>
 
