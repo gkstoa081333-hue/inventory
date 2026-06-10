@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>사무용품 재고관리 (공유형)</title>
+<title>홍보물품 재고관리 (공유형)</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -271,7 +271,7 @@
 <header>
   <div class="logo">
     <div class="logo-icon">📋</div>
-    사무용품 재고관리
+    홍보물품 재고관리
   </div>
   <div class="header-date" id="headerDate"></div>
 </header>
@@ -1047,7 +1047,7 @@ function saveHistEdit() {
 
   // ── delta 방식 재고 재계산 ────────────────────────────────────
   // out/in 타입의 수량 변화만 재고에 반영
-  // → 담당자·메모·일시·목적만 바뀌면 delta=0 → 알림 없이 저장
+  // 담당자·메모·일시·목적만 바뀌면 delta=0 → 알림 없이 저장
   const orig = historyData.find(h => h._key === key);
   const affectedNames = new Set();
   if (orig && orig.name) affectedNames.add(orig.name);
@@ -1062,17 +1062,16 @@ function saveHistEdit() {
 
     // 1) 기존 이력 효과 되돌리기 (out/in만)
     if (orig && orig.name === name) {
-      if (orig.type === 'out') delta += (orig.amount || 0);  // 출고 되돌림 → +
-      if (orig.type === 'in')  delta -= (orig.amount || 0);  // 입고 되돌림 → -
+      if (orig.type === 'out') delta += (orig.amount || 0);
+      if (orig.type === 'in')  delta -= (orig.amount || 0);
     }
 
     // 2) 새 이력 반영 (out/in만)
     if (newData.name === name) {
-      if (newData.type === 'out') delta -= (newData.amount || 0); // 출고 → -
-      if (newData.type === 'in')  delta += (newData.amount || 0); // 입고 → +
+      if (newData.type === 'out') delta -= (newData.amount || 0);
+      if (newData.type === 'in')  delta += (newData.amount || 0);
     }
 
-    // delta=0 이면 재고 변동 없음 → 건너뜀
     if (delta === 0) return;
 
     const newQty = Math.max(0, item.qty + delta);
@@ -1378,7 +1377,7 @@ function exportExcel() {
   inSheet['!cols']=[{wch:5},{wch:18},{wch:20},{wch:8},{wch:12},{wch:25}];
   XLSX.utils.book_append_sheet(wb, inSheet, '📥 입고이력');
 
-  const fileName = `사무용품재고관리_${invLabel}.xlsx`;
+  const fileName = `홍보물품재고관리_${invLabel}.xlsx`;
   XLSX.writeFile(wb, fileName, {bookType:'xlsx'});
   closeModal('excelModal');
 }
