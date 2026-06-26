@@ -820,11 +820,12 @@ function openEditForm(key) {
   document.getElementById('fManager').value=item.manager||'';
   document.getElementById('fMinQty').value=item.minQty||0;
   document.getElementById('fNote').value=item.note||'';
-  // 수정 모드: 수량은 읽기전용(이력 기반 자동계산)으로 표시
-  document.getElementById('fQty').style.display = 'none';
-  document.getElementById('fQtyReadonly').style.display = 'block';
-  document.getElementById('fQtyReadonly').textContent = (item.qty||0) + '개';
+  // 수정 모드: 수량 직접 수정 가능 (수정 시 자동으로 이력에 기록됨)
+  document.getElementById('fQty').style.display = 'block';
+  document.getElementById('fQty').value = item.qty||0;
+  document.getElementById('fQtyReadonly').style.display = 'none';
   document.getElementById('fQtyNote').style.display = 'block';
+  document.getElementById('fQtyNote').textContent = '📌 수량을 직접 고치면 변경 내역이 사용이력에 자동 기록됩니다';
   document.getElementById('addModal').classList.add('active');
 }
 function saveItem() {
@@ -832,8 +833,10 @@ function saveItem() {
   if(!name){alert('품명을 입력해주세요.');return;}
   const key=document.getElementById('editId').value;
   if(key) {
-    // 수정 모드: 수량은 변경하지 않음 (이력 기반 자동계산 유지)
+    // 수정 모드
     const item = items.find(i=>i._key===key);
+    const newQty = parseInt(document.getElementById('fQty').value)||0;
+    const oldQty = item.qty||0;
     const updateData = {
       name,
       team: document.getElementById('fTeam').value.trim(),
@@ -841,7 +844,18 @@ function saveItem() {
       minQty: parseInt(document.getElementById('fMinQty').value)||0,
       note: document.getElementById('fNote').value.trim()
     };
-    fbUpdate(fbRef(db,'items/'+key), updateData);
+    // 수량이 바뀐 경우: 재고 업데이트 + adjust(수동조정) 이력 기록
+    if (newQty !== oldQty) {
+      const diff = newQty - oldQty;
+      const sign = diff > 0 ? '+' : '';
+      if (!confirm(`수량을 ${oldQty}개 → ${newQty}개 (${sign}${diff})로 변경합니다.\n\n변경 내역이 사용이력에 기록됩니다. 계속하시겠습니까?`)) return;
+      updateData.qty = newQty;
+      fbUpdate(fbRef(db,'items/'+key), updateData);
+      addHistoryToFB('adjust', name, newQty, '', document.getElementById('fManager').value.trim()||'관리자',
+        `수동 조정 (${oldQty}→${newQty})`, '');
+    } else {
+      fbUpdate(fbRef(db,'items/'+key), updateData);
+    }
   } else {
     // 신규 추가 모드
     const data={
@@ -927,7 +941,8 @@ function recalcQtyFromHistory(virtualHistory, nameSet) {
 }
 
 // 이력 전체를 시간순으로 재생하여 현재 재고를 계산
-// adjust(수동조정)가 있으면 그 시점부터 새로운 기준값으로 리셋
+// 규칙: add(신규)·in(입고) → 더하기 / out(출고) → 빼기 / adjust(수동조정) → 절대값 리셋
+// amount=0 인 수정용 이력이 섞여도 안전하게 계산됨
 function calcQtyByHistory(name, histList) {
   const sorted = [...histList]
     .filter(h => h.name === name && ['add','in','out','adjust'].includes(h.type))
@@ -935,10 +950,11 @@ function calcQtyByHistory(name, histList) {
 
   let qty = 0;
   for (const h of sorted) {
-    if (h.type === 'add')    qty = (qty === 0) ? (h.amount || 0) : qty + (h.amount || 0);
-    else if (h.type === 'in')    qty += (h.amount || 0);
-    else if (h.type === 'out')   qty -= (h.amount || 0);
-    else if (h.type === 'adjust') qty = (h.amount || 0); // 수동조정 시점에 절대값으로 리셋
+    const amt = h.amount || 0;
+    if (h.type === 'add')         qty += amt;   // 신규 등록 = 더하기
+    else if (h.type === 'in')     qty += amt;   // 입고 = 더하기
+    else if (h.type === 'out')    qty -= amt;   // 출고 = 빼기
+    else if (h.type === 'adjust') qty = amt;    // 수동조정 = 절대값으로 리셋
   }
   return Math.max(0, qty);
 }
@@ -972,10 +988,16 @@ function confirmDelHistAuth() {
 
 function execDeleteHistory(key) {
   const target = historyData.find(h => h._key === key);
-  if (target && target.name && ['in','out','add'].includes(target.type)) {
+  // 재고에 영향을 주는 모든 타입(add/in/out/adjust) 삭제 시 재고 재계산
+  if (target && target.name && ['in','out','add','adjust'].includes(target.type)) {
     const virtualHistory = historyData.filter(h => h._key !== key);
     const updates = recalcQtyFromHistory(virtualHistory, new Set([target.name]));
-    updates.forEach(u => fbUpdate(fbRef(db,'items/'+u.item._key), {qty: u.calcQty}));
+    if (updates.length > 0) {
+      const lines = updates.map(u =>
+        `• ${u.item.name}: ${u.item.qty}개 → ${u.calcQty}개`).join('\n');
+      if (!confirm(`이력 삭제로 재고가 변경됩니다.\n\n${lines}\n\n계속하시겠습니까?`)) return;
+      updates.forEach(u => fbUpdate(fbRef(db,'items/'+u.item._key), {qty: u.calcQty}));
+    }
   }
   fbRemove(fbRef(db, 'history/' + key));
 }
@@ -1045,45 +1067,26 @@ function saveHistEdit() {
   };
   if (!newData.name) { alert('품명을 입력해주세요.'); return; }
 
-  // ── delta 방식 재고 재계산 ────────────────────────────────────
-  // out/in 타입의 수량 변화만 재고에 반영
-  // 담당자·메모·일시·목적만 바뀌면 delta=0 → 알림 없이 저장
+  // ── 전체 이력 기반 재고 재계산 ────────────────────────────────
   const orig = historyData.find(h => h._key === key);
   const affectedNames = new Set();
   if (orig && orig.name) affectedNames.add(orig.name);
   if (newData.name) affectedNames.add(newData.name);
 
-  const updates = [];
-  affectedNames.forEach(name => {
-    const item = items.find(i => i.name === name);
-    if (!item) return;
+  // 수정 내용을 메모리에 반영한 가상 이력 생성
+  const virtualHistory = historyData.map(h =>
+    h._key === key ? { ...h, ...newData } : h
+  );
 
-    let delta = 0;
-
-    // 1) 기존 이력 효과 되돌리기 (out/in만)
-    if (orig && orig.name === name) {
-      if (orig.type === 'out') delta += (orig.amount || 0);
-      if (orig.type === 'in')  delta -= (orig.amount || 0);
-    }
-
-    // 2) 새 이력 반영 (out/in만)
-    if (newData.name === name) {
-      if (newData.type === 'out') delta -= (newData.amount || 0);
-      if (newData.type === 'in')  delta += (newData.amount || 0);
-    }
-
-    if (delta === 0) return;
-
-    const newQty = Math.max(0, item.qty + delta);
-    updates.push({ item, newQty });
-  });
+  // 공통 함수로 재고 재계산
+  const updates = recalcQtyFromHistory(virtualHistory, affectedNames);
 
   if (updates.length > 0) {
     const lines = updates.map(u =>
-      `• ${u.item.name}: ${u.item.qty}개 → ${u.newQty}개`).join('\n');
-    if (!confirm(`재고가 변경됩니다.\n\n${lines}\n\n계속하시겠습니까?`)) return;
+      `• ${u.item.name}: ${u.item.qty}개 → ${u.calcQty}개`).join('\n');
+    if (!confirm(`이력 수정 후 재고가 변경됩니다.\n\n${lines}\n\n계속하시겠습니까?`)) return;
     updates.forEach(u => {
-      fbUpdate(fbRef(db, 'items/' + u.item._key), { qty: u.newQty });
+      fbUpdate(fbRef(db, 'items/' + u.item._key), { qty: u.calcQty });
     });
   }
 
