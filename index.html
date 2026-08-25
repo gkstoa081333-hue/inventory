@@ -538,12 +538,28 @@ function initFirebase() {
     const val = snap.val();
     historyData = val ? Object.entries(val).map(([k,v]) => ({...v, _key:k}))
                             .sort((a,b) => b.ts - a.ts) : [];
+    migrateAddToIn();  // 과거 '추가' 이력을 '입고'로 1회 변환
     renderHistory();
   });
 }
 
 window.addEventListener('firebaseReady', initFirebase);
 if (window._firebaseReady) initFirebase();
+
+
+// ── 과거 '추가(add)' 이력을 '입고(in)'으로 일괄 변환 (1회성) ──────
+let _migrateDone = false;
+function migrateAddToIn() {
+  if (_migrateDone) return;
+  const addItems = historyData.filter(h => h.type === 'add');
+  if (addItems.length === 0) { _migrateDone = true; return; }
+  addItems.forEach(h => {
+    const newPurpose = (h.purpose && h.purpose.includes('신규'))
+      ? '신규 품목 등록(입고)' : (h.purpose || '입고');
+    fbUpdate(fbRef(db, 'history/' + h._key), { type: 'in', purpose: newPurpose });
+  });
+  _migrateDone = true;
+}
 
 function setConn(ok) {
   document.getElementById('connDot').className = 'conn-dot' + (ok ? '' : ' err');
@@ -866,8 +882,8 @@ function saveItem() {
       note:document.getElementById('fNote').value.trim()
     };
     fbPush(fbRef(db,'items'),data);
-    // 신규 등록 시 이력은 'add' 타입 1개만 기록 (in과 중복 방지)
-    addHistoryToFB('add',name,data.qty,'',data.manager||'','신규 품목 등록','');
+    // 신규 등록 시 '입고'로 기록 → 입고현황에 정상 반영
+    addHistoryToFB('in',name,data.qty,'',data.manager||'','신규 품목 등록(입고)','');
   }
   closeModal('addModal');
 }
