@@ -1062,6 +1062,7 @@ function openHistEditForm(key) {
   } else {
     document.getElementById('heDateTime').value = '';
   }
+  document.getElementById('heApplyStock').checked = true;
   document.getElementById('histEditModal').classList.add('active');
   setTimeout(() => document.getElementById('heName').focus(), 100);
 }
@@ -1083,28 +1084,33 @@ function saveHistEdit() {
   };
   if (!newData.name) { alert('품명을 입력해주세요.'); return; }
 
-  // ── 전체 이력 기반 재고 재계산 ────────────────────────────────
-  const orig = historyData.find(h => h._key === key);
-  const affectedNames = new Set();
-  if (orig && orig.name) affectedNames.add(orig.name);
-  if (newData.name) affectedNames.add(newData.name);
+  // 재고 반영 여부 (체크박스)
+  const applyStock = document.getElementById('heApplyStock').checked;
 
-  // 수정 내용을 메모리에 반영한 가상 이력 생성
-  const virtualHistory = historyData.map(h =>
-    h._key === key ? { ...h, ...newData } : h
-  );
+  if (applyStock) {
+    // ── 재고 반영 ON: 전체 이력 기반 재고 재계산 ──────────────────
+    const orig = historyData.find(h => h._key === key);
+    const affectedNames = new Set();
+    if (orig && orig.name) affectedNames.add(orig.name);
+    if (newData.name) affectedNames.add(newData.name);
 
-  // 공통 함수로 재고 재계산
-  const updates = recalcQtyFromHistory(virtualHistory, affectedNames);
+    // 수정 내용을 메모리에 반영한 가상 이력 생성
+    const virtualHistory = historyData.map(h =>
+      h._key === key ? { ...h, ...newData } : h
+    );
 
-  if (updates.length > 0) {
-    const lines = updates.map(u =>
-      `• ${u.item.name}: ${u.item.qty}개 → ${u.calcQty}개`).join('\n');
-    if (!confirm(`이력 수정 후 재고가 변경됩니다.\n\n${lines}\n\n계속하시겠습니까?`)) return;
-    updates.forEach(u => {
-      fbUpdate(fbRef(db, 'items/' + u.item._key), { qty: u.calcQty });
-    });
+    const updates = recalcQtyFromHistory(virtualHistory, affectedNames);
+
+    if (updates.length > 0) {
+      const lines = updates.map(u =>
+        `• ${u.item.name}: ${u.item.qty}개 → ${u.calcQty}개`).join('\n');
+      if (!confirm(`이력 수정 후 재고가 변경됩니다.\n\n${lines}\n\n계속하시겠습니까?`)) return;
+      updates.forEach(u => {
+        fbUpdate(fbRef(db, 'items/' + u.item._key), { qty: u.calcQty });
+      });
+    }
   }
+  // 재고 반영 OFF: 이력만 수정 (재고 수량 그대로 유지)
 
   fbUpdate(fbRef(db, 'history/' + key), newData);
   closeModal('histEditModal');
@@ -1658,6 +1664,15 @@ document.addEventListener('keydown',e=>{
     <div class="form-group">
       <label class="form-label">일시</label>
       <input class="form-input" id="heDateTime" type="datetime-local" style="width:100%">
+    </div>
+    <div class="form-group" style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:4px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2)">
+        <input type="checkbox" id="heApplyStock" checked style="width:16px;height:16px;cursor:pointer">
+        <span>수정 내용을 <strong>재고 수량에 반영</strong>하기</span>
+      </label>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;padding-left:24px">
+        체크 해제 시 이력 내용만 수정되고 재고 수량은 그대로 유지됩니다.
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" style="flex:1" onclick="saveHistEdit()">저장</button>
