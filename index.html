@@ -332,7 +332,7 @@
       <select id="histType">
         <option value="">전체 유형</option>
         <option value="out">출고(사용)</option>
-        <option value="in">입고(보충)</option>
+        <option value="in">입고(신규+추가)</option>
         <option value="add">품목추가</option>
         <option value="del">품목삭제</option>
       </select>
@@ -377,7 +377,7 @@
     </div>
     <div class="form-group"><label class="form-label">비고</label><input class="form-input" id="fNote" placeholder="특이사항"></div>
     <div class="modal-actions">
-      <button class="btn btn-primary" style="flex:1" onclick="saveItem()">저장</button>
+      <button class="btn btn-primary" style="flex:1" id="saveItemBtn" onclick="saveItem()">저장</button>
       <button class="btn btn-ghost" onclick="closeModal('addModal')">취소</button>
     </div>
   </div>
@@ -496,7 +496,7 @@
     <div class="form-group"><label class="form-label">👤 입고 처리자 <span class="required">*</span></label><div class="who-wrap"><input class="form-input" id="restoreWho" placeholder="이름 또는 부서명" list="whoList" autocomplete="off"></div></div>
     <div class="form-group"><label class="form-label">메모</label><input class="form-input" id="restoreMemo" placeholder="예: 00업체 구매, 반납 등"></div>
     <div class="modal-actions">
-      <button class="btn btn-primary" style="flex:1" onclick="confirmRestore()">입고 확인</button>
+      <button class="btn btn-primary" style="flex:1" id="restoreConfirmBtn" onclick="confirmRestore()">입고 확인</button>
       <button class="btn btn-ghost" onclick="closeModal('restoreModal')">취소</button>
     </div>
   </div>
@@ -599,11 +599,13 @@ function saveItemToFB(item) {
 function deleteItemFromFB(key) {
   fbRemove(fbRef(db, 'items/' + key));
 }
-function addHistoryToFB(type, name, amount, unit, who, purpose, note) {
-  fbPush(fbRef(db, 'history'), {
+function addHistoryToFB(type, name, amount, unit, who, purpose, note, subtype) {
+  const rec = {
     type, name, amount: amount||0, unit: unit||'', who: who||'',
     purpose: purpose||'', note: note||'', time: now(), ts: Date.now()
-  });
+  };
+  if (subtype) rec.subtype = subtype; // 'in' 타입 세부 구분: 'new'(신규입고) / 'restock'(추가입고)
+  fbPush(fbRef(db, 'history'), rec);
 }
 function clearHistoryInFB() {
   fbSet(fbRef(db, 'history'), null);
@@ -759,11 +761,18 @@ function renderHistory() {
 
   const typeLabel={out:'출고',in:'입고',add:'추가',del:'삭제'};
   const typeClass={out:'type-out',in:'type-in',add:'type-add',del:'type-del'};
+  // 'in'(입고) 이력을 신규입고/추가입고로 세부 구분해서 표시
+  function inBadge(h) {
+    const isNew = h.subtype === 'new' || (!h.subtype && (h.purpose||'').includes('신규'));
+    return isNew ? { label: '신규입고', cls: 'type-add' } : { label: '추가입고', cls: 'type-in' };
+  }
   const el = document.getElementById('historyList');
   if (!list.length) { el.innerHTML='<div class="hist-empty">검색 결과가 없습니다.</div>'; return; }
-  el.innerHTML = list.map(h=>`
+  el.innerHTML = list.map(h=>{
+    const badge = h.type === 'in' ? inBadge(h) : { label: typeLabel[h.type]||h.type, cls: typeClass[h.type]||'' };
+    return `
     <div class="hist-row">
-      <div><span class="type-badge ${typeClass[h.type]||''}">${typeLabel[h.type]||h.type}</span></div>
+      <div><span class="type-badge ${badge.cls}">${badge.label}</span></div>
       <div style="font-weight:500">${h.name||''}</div>
       <div class="mono">${h.amount||''} ${h.unit||''}</div>
       <div>${h.who?`<span class="who-tag">👤 ${h.who}</span>`:'-'}</div>
@@ -771,7 +780,8 @@ function renderHistory() {
       <div style="font-size:11px;color:var(--text3)">${h.time||''}</div>
       <div><button class="btn-sm del" onclick="deleteHistory('${h._key}')">삭제</button></div>
       <div><button class="btn-sm edit" onclick="openEditHistoryModal('${h._key}')">수정</button></div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 // ── 탭 ───────────────────────────────────────────────────────
@@ -798,6 +808,7 @@ function openAddModal() {
   document.getElementById('fQty').style.display = 'block';
   document.getElementById('fQtyReadonly').style.display = 'none';
   document.getElementById('fQtyNote').style.display = 'none';
+  document.getElementById('saveItemBtn').disabled = false;
   document.getElementById('addModal').classList.add('active');
   setTimeout(()=>document.getElementById('fName').focus(),100);
 }
@@ -842,9 +853,12 @@ function openEditForm(key) {
   document.getElementById('fQtyReadonly').style.display = 'none';
   document.getElementById('fQtyNote').style.display = 'block';
   document.getElementById('fQtyNote').textContent = '📌 수량을 직접 고치면 변경 내역이 사용이력에 자동 기록됩니다';
+  document.getElementById('saveItemBtn').disabled = false;
   document.getElementById('addModal').classList.add('active');
 }
 function saveItem() {
+  const btn = document.getElementById('saveItemBtn');
+  if (btn.disabled) return; // 중복 클릭으로 인한 이력 중복 기록 방지
   const name=document.getElementById('fName').value.trim();
   if(!name){alert('품명을 입력해주세요.');return;}
   const key=document.getElementById('editId').value;
@@ -865,15 +879,18 @@ function saveItem() {
       const diff = newQty - oldQty;
       const sign = diff > 0 ? '+' : '';
       if (!confirm(`수량을 ${oldQty}개 → ${newQty}개 (${sign}${diff})로 변경합니다.\n\n변경 내역이 사용이력에 기록됩니다. 계속하시겠습니까?`)) return;
+      btn.disabled = true;
       updateData.qty = newQty;
       fbUpdate(fbRef(db,'items/'+key), updateData);
       addHistoryToFB('adjust', name, newQty, '', document.getElementById('fManager').value.trim()||'관리자',
         `수동 조정 (${oldQty}→${newQty})`, '');
     } else {
+      btn.disabled = true;
       fbUpdate(fbRef(db,'items/'+key), updateData);
     }
   } else {
     // 신규 추가 모드
+    btn.disabled = true;
     const data={
       name, team:document.getElementById('fTeam').value.trim(),
       manager:document.getElementById('fManager').value.trim(),
@@ -882,8 +899,8 @@ function saveItem() {
       note:document.getElementById('fNote').value.trim()
     };
     fbPush(fbRef(db,'items'),data);
-    // 신규 등록 시 '입고'로 기록 → 입고현황에 정상 반영
-    addHistoryToFB('in',name,data.qty,'',data.manager||'','신규 품목 등록(입고)','');
+    // 신규 등록 시 '입고'로 기록 (subtype 'new' → 신규입고로 표시) → 입고현황에 정상 반영
+    addHistoryToFB('in',name,data.qty,'',data.manager||'','신규 품목 등록(입고)','','new');
   }
   closeModal('addModal');
 }
@@ -922,10 +939,13 @@ function openRestoreModal(key) {
   document.getElementById('restoreQty').value='';
   document.getElementById('restoreWho').value='';
   document.getElementById('restoreMemo').value='';
+  document.getElementById('restoreConfirmBtn').disabled = false;
   document.getElementById('restoreModal').classList.add('active');
   setTimeout(()=>document.getElementById('restoreQty').focus(),100);
 }
 function confirmRestore() {
+  const btn = document.getElementById('restoreConfirmBtn');
+  if (btn.disabled) return; // 중복 클릭으로 인한 입고 이력 중복 기록 방지
   const key=document.getElementById('restoreId').value;
   const qty=parseInt(document.getElementById('restoreQty').value);
   const who=document.getElementById('restoreWho').value.trim();
@@ -933,8 +953,10 @@ function confirmRestore() {
   if(!qty||qty<1){alert('수량을 입력해주세요.');return;}
   if(!who){alert('입고 처리자를 입력해주세요.');return;}
   const item=items.find(i=>i._key===key);if(!item)return;
+  btn.disabled = true;
   fbUpdate(fbRef(db,'items/'+key),{qty: item.qty + qty});
-  addHistoryToFB('in',item.name,qty,item.unit,who,memo,'');
+  // 기존 품목에 대한 입고 (subtype 'restock' → 추가입고로 표시)
+  addHistoryToFB('in',item.name,qty,item.unit,who,memo,'','restock');
   closeModal('restoreModal');
 }
 
