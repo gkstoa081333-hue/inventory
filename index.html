@@ -32,6 +32,7 @@
 
   // 전역 노출
   window._db = db;
+  window._dbUrl = firebaseConfig.databaseURL;
   window._ref = ref;
   window._set = set;
   window._push = push;
@@ -286,6 +287,11 @@
 
   <div class="alert-banner" id="alertBanner">⚠️ <span id="alertText"></span></div>
 
+  <div class="alert-banner" id="migrateBanner" style="background:#eff6ff;border-color:#bfdbfe;color:var(--accent)">
+    🛠️ <span>재고 계산 방식이 개선되었습니다. <b>최초 1회 재고 기준점 설정</b>이 필요합니다. 현재 수량은 그대로 유지됩니다.</span>
+    <button class="btn btn-primary" style="margin-left:auto;font-size:12px;padding:6px 12px" onclick="openMigrateModal()">기준점 설정하기</button>
+  </div>
+
   <div class="tabs">
     <button class="tab active" onclick="switchTab('inventory')">📦 재고 현황</button>
     <button class="tab" onclick="switchTab('history')">📋 사용 이력</button>
@@ -333,6 +339,9 @@
         <option value="">전체 유형</option>
         <option value="out">출고(사용)</option>
         <option value="in">입고(신규+추가)</option>
+        <option value="return">반납</option>
+        <option value="adjust">조정</option>
+        <option value="anchor">기준점</option>
         <option value="add">품목추가</option>
         <option value="del">품목삭제</option>
       </select>
@@ -340,7 +349,8 @@
       <input type="date" id="histDateFrom" title="시작일" style="font-size:12px;padding:7px 10px">
       <input type="date" id="histDateTo" title="종료일" style="font-size:12px;padding:7px 10px">
       <button class="btn btn-ghost" onclick="resetHistFilters()" style="font-size:12px;padding:7px 12px">초기화</button>
-      <button class="btn btn-ghost" onclick="openSyncModal()" title="재고 동기화" style="font-size:12px;padding:6px 12px;color:var(--warn);border-color:var(--warn)">🔄 재고 동기화</button>
+      <button class="btn btn-ghost" onclick="openCloseoutModal()" title="재고조사 마감(기준점 갱신)" style="font-size:12px;padding:6px 12px;color:var(--accent);border-color:var(--accent)">📸 재고조사 마감</button>
+      <button class="btn btn-ghost" onclick="openSyncModal()" title="재고 동기화(이력과 재대조)" style="font-size:12px;padding:6px 12px;color:var(--warn);border-color:var(--warn)">🔄 재고 동기화</button>
       <button class="setting-btn" onclick="openPwSetModal()" title="관리자 암호 설정">⚙️</button>
     </div>
     <div class="history-wrap">
@@ -480,7 +490,7 @@
     <div class="form-group"><label class="form-label">👤 가져간 사람 <span class="required">*</span></label><div class="who-wrap"><input class="form-input" id="takeWho" placeholder="이름 또는 부서명" list="whoList" autocomplete="off"><datalist id="whoList"></datalist></div></div>
     <div class="form-group"><label class="form-label">사용 목적 / 메모</label><input class="form-input" id="takePurpose" placeholder="예: 회의 자료 출력"></div>
     <div class="modal-actions">
-      <button class="btn btn-primary" style="flex:1;background:var(--danger)" onclick="confirmTake()">출고 확인</button>
+      <button class="btn btn-primary" id="takeConfirmBtn" style="flex:1;background:var(--danger)" onclick="confirmTake()">출고 확인</button>
       <button class="btn btn-ghost" onclick="closeModal('takeModal')">취소</button>
     </div>
   </div>
@@ -494,10 +504,29 @@
     <div class="form-group"><label class="form-label">현재 재고</label><div style="padding:8px 12px;background:var(--surface2);border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text2)" id="restoreCurrent"></div></div>
     <div class="form-group"><label class="form-label">입고 수량 <span class="required">*</span></label><input class="form-input" id="restoreQty" type="number" min="1" placeholder="1"></div>
     <div class="form-group"><label class="form-label">👤 입고 처리자 <span class="required">*</span></label><div class="who-wrap"><input class="form-input" id="restoreWho" placeholder="이름 또는 부서명" list="whoList" autocomplete="off"></div></div>
-    <div class="form-group"><label class="form-label">메모</label><input class="form-input" id="restoreMemo" placeholder="예: 00업체 구매, 반납 등"></div>
+    <div class="form-group"><label class="form-label">메모</label><input class="form-input" id="restoreMemo" placeholder="예: 00업체 구매 (반납은 사용이력의 [반납] 버튼 사용)"></div>
     <div class="modal-actions">
       <button class="btn btn-primary" style="flex:1" id="restoreConfirmBtn" onclick="confirmRestore()">입고 확인</button>
       <button class="btn btn-ghost" onclick="closeModal('restoreModal')">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- RETURN MODAL (반납) -->
+<div class="modal-overlay" id="returnModal">
+  <div class="modal">
+    <div class="modal-title">↩ 반납 처리 — <span id="returnItemName" style="color:var(--ok)"></span></div>
+    <input type="hidden" id="returnOutKey">
+    <div class="form-group"><label class="form-label">원 출고</label><div style="padding:8px 12px;background:var(--surface2);border-radius:7px;font-size:13px;color:var(--text2)" id="returnOutInfo"></div></div>
+    <div class="form-group"><label class="form-label">반납 수량 <span class="required">*</span></label><input class="form-input" id="returnQty" type="number" min="1" placeholder="1"></div>
+    <div class="form-group"><label class="form-label">👤 반납 처리자 <span class="required">*</span></label><div class="who-wrap"><input class="form-input" id="returnWho" placeholder="이름 또는 부서명" list="whoList" autocomplete="off"></div></div>
+    <div class="form-group"><label class="form-label">메모</label><input class="form-input" id="returnMemo" placeholder="예: 미사용 반납"></div>
+    <div style="font-size:11px;color:var(--text3);background:var(--surface2);border-radius:6px;padding:8px 10px;margin-bottom:12px">
+      반납은 재고에 다시 더해지지만 <b>입고이력·입고 통계에는 포함되지 않습니다.</b>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" id="returnConfirmBtn" onclick="confirmReturn()">반납 확인</button>
+      <button class="btn btn-ghost" onclick="closeModal('returnModal')">취소</button>
     </div>
   </div>
 </div>
@@ -507,8 +536,14 @@
 const ADMIN_PW_KEY = 'gongju_inventory_admin_pw';
 let items = [];
 let historyData = [];
+let metaData = {};
 let sortKey = 'name', sortAsc = true;
 let db, fbRef, fbSet, fbPush, fbRemove, fbUpdate, fbOnValue;
+
+// ── 재고 계산 정책 ────────────────────────────────────────────
+// migratedV2 플래그가 있으면: 재고 = (가장 최근 기준점/조정 이후) 입고·반납(+) − 출고(−)
+// 없으면(마이그레이션 전): 기존 저장값(item.qty) 그대로 사용 → 동작 변화 없음
+function isMigrated() { return !!(metaData && metaData.migratedV2); }
 
 // ── Firebase 준비 후 초기화 ────────────────────────────────────
 function initFirebase() {
@@ -524,6 +559,7 @@ function initFirebase() {
   fbOnValue(fbRef(db, 'items'), snap => {
     const val = snap.val();
     items = val ? Object.entries(val).map(([k,v]) => ({...v, _key: k})) : [];
+    reconcileStock();
     render();
     document.getElementById('loadingOverlay').style.display = 'none';
     setConn(true);
@@ -533,33 +569,27 @@ function initFirebase() {
     console.error(err);
   });
 
+  // 메타(마이그레이션 플래그 등) 실시간 수신
+  fbOnValue(fbRef(db, 'meta'), snap => {
+    metaData = snap.val() || {};
+    reconcileStock();
+    render();
+    maybeShowMigrateBanner();
+  });
+
   // 이력 실시간 수신
   fbOnValue(fbRef(db, 'history'), snap => {
     const val = snap.val();
     historyData = val ? Object.entries(val).map(([k,v]) => ({...v, _key:k}))
                             .sort((a,b) => b.ts - a.ts) : [];
-    migrateAddToIn();  // 과거 '추가' 이력을 '입고'로 1회 변환
+    reconcileStock();   // 기준점 이후 이력 기준으로 재고 수량 자동 정합
     renderHistory();
+    render();
   });
 }
 
 window.addEventListener('firebaseReady', initFirebase);
 if (window._firebaseReady) initFirebase();
-
-
-// ── 과거 '추가(add)' 이력을 '입고(in)'으로 일괄 변환 (1회성) ──────
-let _migrateDone = false;
-function migrateAddToIn() {
-  if (_migrateDone) return;
-  const addItems = historyData.filter(h => h.type === 'add');
-  if (addItems.length === 0) { _migrateDone = true; return; }
-  addItems.forEach(h => {
-    const newPurpose = (h.purpose && h.purpose.includes('신규'))
-      ? '신규 품목 등록(입고)' : (h.purpose || '입고');
-    fbUpdate(fbRef(db, 'history/' + h._key), { type: 'in', purpose: newPurpose });
-  });
-  _migrateDone = true;
-}
 
 function setConn(ok) {
   document.getElementById('connDot').className = 'conn-dot' + (ok ? '' : ' err');
@@ -574,9 +604,11 @@ function now() {
   return new Date().toLocaleString('ko-KR',
     {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
 }
+function displayQty(item) { return isMigrated() ? calcStock(item) : (item.qty || 0); }
 function getStatus(item) {
-  if (item.qty === 0) return 'out';
-  if (item.qty <= item.minQty) return 'warn';
+  const q = displayQty(item);
+  if (q <= 0) return 'out';
+  if (q <= item.minQty) return 'warn';
   return 'ok';
 }
 function getWhoList() {
@@ -599,12 +631,13 @@ function saveItemToFB(item) {
 function deleteItemFromFB(key) {
   fbRemove(fbRef(db, 'items/' + key));
 }
-function addHistoryToFB(type, name, amount, unit, who, purpose, note, subtype) {
+function addHistoryToFB(type, name, amount, unit, who, purpose, note, subtype, itemId) {
   const rec = {
     type, name, amount: amount||0, unit: unit||'', who: who||'',
     purpose: purpose||'', note: note||'', time: now(), ts: Date.now()
   };
   if (subtype) rec.subtype = subtype; // 'in' 타입 세부 구분: 'new'(신규입고) / 'restock'(추가입고)
+  if (itemId) rec.itemId = itemId;    // 이력↔품목 연결 (재고 계산 기준)
   fbPush(fbRef(db, 'history'), rec);
 }
 function clearHistoryInFB() {
@@ -634,9 +667,9 @@ function render() {
   const teams = [...new Set(items.map(i=>i.team).filter(Boolean))].sort();
   const mgrs  = [...new Set(items.map(i=>i.manager).filter(Boolean))].sort();
   if (teamSel) teamSel.innerHTML = '<option value="">전체 팀</option>' +
-    teams.map(t=>`<option value="${t}"${t===prevTeam?' selected':''}}>${t}</option>`).join('');
+    teams.map(t=>`<option value="${t}"${t===prevTeam?' selected':''}>${t}</option>`).join('');
   if (mgrSel) mgrSel.innerHTML = '<option value="">전체 담당자</option>' +
-    mgrs.map(m=>`<option value="${m}"${m===prevMgr?' selected':''}}>${m}</option>`).join('');
+    mgrs.map(m=>`<option value="${m}"${m===prevMgr?' selected':''}>${m}</option>`).join('');
 
   list.sort((a,b)=>{
     let av=a[sortKey]??'', bv=b[sortKey]??'';
@@ -655,7 +688,7 @@ function render() {
       <td>${item.team||'-'}</td>
       <td>${item.manager||'-'}</td>
       <td class="mono" style="font-size:15px;font-weight:700;color:${st==='out'?'var(--danger)':st==='warn'?'var(--warn)':'var(--ok)'}">
-        ${item.qty}
+        ${displayQty(item)}
         <button onclick="openQtyManualModal('${item._key}')" title="수량 수동 수정 (관리자)" style="margin-left:6px;font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--text3);cursor:pointer;vertical-align:middle">✏️</button>
       </td>
       <td class="mono">${item.minQty||0}</td>
@@ -759,8 +792,8 @@ function renderHistory() {
       whos.map(w => `<option value="${w}"${w===prevWho?' selected':''}>${w}</option>`).join('');
   }
 
-  const typeLabel={out:'출고',in:'입고',add:'추가',del:'삭제'};
-  const typeClass={out:'type-out',in:'type-in',add:'type-add',del:'type-del'};
+  const typeLabel={out:'출고',in:'입고',add:'추가',del:'삭제',return:'반납',adjust:'조정',anchor:'기준점'};
+  const typeClass={out:'type-out',in:'type-in',add:'type-add',del:'type-del',return:'type-in',adjust:'type-add',anchor:'type-del'};
   // 'in'(입고) 이력을 신규입고/추가입고로 세부 구분해서 표시
   function inBadge(h) {
     const isNew = h.subtype === 'new' || (!h.subtype && (h.purpose||'').includes('신규'));
@@ -770,13 +803,14 @@ function renderHistory() {
   if (!list.length) { el.innerHTML='<div class="hist-empty">검색 결과가 없습니다.</div>'; return; }
   el.innerHTML = list.map(h=>{
     const badge = h.type === 'in' ? inBadge(h) : { label: typeLabel[h.type]||h.type, cls: typeClass[h.type]||'' };
+    const canReturn = h.type === 'out';
     return `
     <div class="hist-row">
       <div><span class="type-badge ${badge.cls}">${badge.label}</span></div>
       <div style="font-weight:500">${h.name||''}</div>
       <div class="mono">${h.amount||''} ${h.unit||''}</div>
       <div>${h.who?`<span class="who-tag">👤 ${h.who}</span>`:'-'}</div>
-      <div style="font-size:12px;color:var(--text2)">${h.purpose||'-'}</div>
+      <div style="font-size:12px;color:var(--text2)">${h.purpose||'-'}${canReturn?` <button class="btn-sm restore" style="margin-left:4px" onclick="openReturnModal('${h._key}')">↩ 반납</button>`:''}</div>
       <div style="font-size:11px;color:var(--text3)">${h.time||''}</div>
       <div><button class="btn-sm del" onclick="deleteHistory('${h._key}')">삭제</button></div>
       <div><button class="btn-sm edit" onclick="openEditHistoryModal('${h._key}')">수정</button></div>
@@ -849,7 +883,7 @@ function openEditForm(key) {
   document.getElementById('fNote').value=item.note||'';
   // 수정 모드: 수량 직접 수정 가능 (수정 시 자동으로 이력에 기록됨)
   document.getElementById('fQty').style.display = 'block';
-  document.getElementById('fQty').value = item.qty||0;
+  document.getElementById('fQty').value = displayQty(item);
   document.getElementById('fQtyReadonly').style.display = 'none';
   document.getElementById('fQtyNote').style.display = 'block';
   document.getElementById('fQtyNote').textContent = '📌 수량을 직접 고치면 변경 내역이 사용이력에 자동 기록됩니다';
@@ -866,7 +900,7 @@ function saveItem() {
     // 수정 모드
     const item = items.find(i=>i._key===key);
     const newQty = parseInt(document.getElementById('fQty').value)||0;
-    const oldQty = item.qty||0;
+    const oldQty = displayQty(item);
     const updateData = {
       name,
       team: document.getElementById('fTeam').value.trim(),
@@ -883,13 +917,16 @@ function saveItem() {
       updateData.qty = newQty;
       fbUpdate(fbRef(db,'items/'+key), updateData);
       addHistoryToFB('adjust', name, newQty, '', document.getElementById('fManager').value.trim()||'관리자',
-        `수동 조정 (${oldQty}→${newQty})`, '');
+        `수동 조정 (${oldQty}→${newQty})`, '', '', key);
     } else {
       btn.disabled = true;
       fbUpdate(fbRef(db,'items/'+key), updateData);
     }
   } else {
     // 신규 추가 모드
+    if (items.some(i => i.name === name)) {
+      if (!confirm(`'${name}' 품명의 품목이 이미 있습니다.\n\n· 재구매(추가 입고)라면 [취소] 후 기존 품목의 [입고] 버튼을 쓰세요.\n· 팀이 다른 별개 품목이면 [확인].\n\n새 품목으로 추가할까요?`)) { btn.disabled = false; return; }
+    }
     btn.disabled = true;
     const data={
       name, team:document.getElementById('fTeam').value.trim(),
@@ -898,9 +935,16 @@ function saveItem() {
       minQty:parseInt(document.getElementById('fMinQty').value)||0,
       note:document.getElementById('fNote').value.trim()
     };
-    fbPush(fbRef(db,'items'),data);
-    // 신규 등록 시 '입고'로 기록 (subtype 'new' → 신규입고로 표시) → 입고현황에 정상 반영
-    addHistoryToFB('in',name,data.qty,'',data.manager||'','신규 품목 등록(입고)','','new');
+    const newRef = fbPush(fbRef(db,'items'), data);
+    const newId = newRef.key;
+    // 기준점(anchor 0, 과거 시각) + 신규 입고 → 마이그레이션 이후에도 재고 계산이 성립
+    if (isMigrated()) {
+      fbPush(fbRef(db,'history'), {
+        type:'anchor', name, amount:0, unit:'', who:data.manager||'관리자',
+        purpose:'신규 품목 기준점', note:'', time:now(), ts:Date.now()-60000, itemId:newId
+      });
+    }
+    addHistoryToFB('in',name,data.qty,'',data.manager||'','신규 품목 등록(입고)','','new',newId);
   }
   closeModal('addModal');
 }
@@ -909,14 +953,17 @@ function openTakeModal(key) {
   const item=items.find(i=>i._key===key);if(!item)return;
   document.getElementById('takeId').value=key;
   document.getElementById('takeItemName').textContent=item.name;
-  document.getElementById('takeCurrent').textContent=`${item.qty} ${item.unit||''}`;
+  document.getElementById('takeCurrent').textContent=`${displayQty(item)} ${item.unit||''}`;
   document.getElementById('takeQty').value='';
   document.getElementById('takeWho').value='';
   document.getElementById('takePurpose').value='';
+  document.getElementById('takeConfirmBtn').disabled=false;
   document.getElementById('takeModal').classList.add('active');
   setTimeout(()=>document.getElementById('takeQty').focus(),100);
 }
 function confirmTake() {
+  const btn=document.getElementById('takeConfirmBtn');
+  if(btn.disabled) return; // 중복 클릭으로 인한 출고 이력 중복 기록 방지
   const key=document.getElementById('takeId').value;
   const qty=parseInt(document.getElementById('takeQty').value);
   const who=document.getElementById('takeWho').value.trim();
@@ -925,9 +972,11 @@ function confirmTake() {
   if(!who){alert('가져간 사람을 입력해주세요.');return;}
   const item=items.find(i=>i._key===key);
   if(!item)return;
-  if(qty>item.qty){alert(`재고(${item.qty})보다 많은 수량입니다.`);return;}
-  fbUpdate(fbRef(db,'items/'+key),{qty: item.qty - qty});
-  addHistoryToFB('out',item.name,qty,item.unit,who,purpose,'');
+  const cur=displayQty(item);
+  if(qty>cur){alert(`재고(${cur})보다 많은 수량입니다.`);return;}
+  btn.disabled=true;
+  fbUpdate(fbRef(db,'items/'+key),{qty: cur - qty});
+  addHistoryToFB('out',item.name,qty,item.unit,who,purpose,'','',key);
   closeModal('takeModal');
 }
 
@@ -935,7 +984,7 @@ function openRestoreModal(key) {
   const item=items.find(i=>i._key===key);if(!item)return;
   document.getElementById('restoreId').value=key;
   document.getElementById('restoreItemName').textContent=item.name;
-  document.getElementById('restoreCurrent').textContent=`${item.qty} ${item.unit||''}`;
+  document.getElementById('restoreCurrent').textContent=`${displayQty(item)} ${item.unit||''}`;
   document.getElementById('restoreQty').value='';
   document.getElementById('restoreWho').value='';
   document.getElementById('restoreMemo').value='';
@@ -954,47 +1003,116 @@ function confirmRestore() {
   if(!who){alert('입고 처리자를 입력해주세요.');return;}
   const item=items.find(i=>i._key===key);if(!item)return;
   btn.disabled = true;
-  fbUpdate(fbRef(db,'items/'+key),{qty: item.qty + qty});
+  fbUpdate(fbRef(db,'items/'+key),{qty: displayQty(item) + qty});
   // 기존 품목에 대한 입고 (subtype 'restock' → 추가입고로 표시)
-  addHistoryToFB('in',item.name,qty,item.unit,who,memo,'','restock');
+  addHistoryToFB('in',item.name,qty,item.unit,who,memo,'','restock',key);
   closeModal('restoreModal');
+}
+
+// ── 반납 처리 ─────────────────────────────────────────────────
+function openReturnModal(outKey) {
+  const out = historyData.find(h => h._key === outKey);
+  if (!out) return;
+  // 품목 특정: itemId 우선, 없으면 품명으로 (동명이 여러 개면 불가)
+  let itemId = out.itemId;
+  if (!itemId) {
+    const matches = items.filter(i => i.name === out.name);
+    if (matches.length === 1) itemId = matches[0]._key;
+  }
+  if (!itemId) { alert('이 출고건의 품목을 특정할 수 없어 반납 처리가 불가합니다.\n재고 현황에서 해당 품목의 [입고] 버튼으로 처리해주세요.'); return; }
+  const item = items.find(i => i._key === itemId);
+  document.getElementById('returnOutKey').value = itemId;
+  document.getElementById('returnItemName').textContent = out.name;
+  document.getElementById('returnOutInfo').textContent =
+    `${out.time || ''} · ${out.amount || 0}개 · ${out.who || '-'}${out.purpose ? ' · ' + out.purpose : ''}`;
+  document.getElementById('returnQty').value = out.amount || 1;
+  document.getElementById('returnWho').value = '';
+  document.getElementById('returnMemo').value = `반납 (원출고 ${out.time || ''})`;
+  document.getElementById('returnConfirmBtn').disabled = false;
+  document.getElementById('returnModal').classList.add('active');
+  setTimeout(() => document.getElementById('returnQty').focus(), 100);
+}
+function confirmReturn() {
+  const btn = document.getElementById('returnConfirmBtn');
+  if (btn.disabled) return;
+  const itemId = document.getElementById('returnOutKey').value;
+  const qty = parseInt(document.getElementById('returnQty').value);
+  const who = document.getElementById('returnWho').value.trim();
+  const memo = document.getElementById('returnMemo').value.trim();
+  if (!qty || qty < 1) { alert('수량을 입력해주세요.'); return; }
+  if (!who) { alert('반납 처리자를 입력해주세요.'); return; }
+  const item = items.find(i => i._key === itemId);
+  if (!item) return;
+  btn.disabled = true;
+  fbUpdate(fbRef(db, 'items/' + itemId), { qty: displayQty(item) + qty });
+  addHistoryToFB('return', item.name, qty, item.unit, who, memo, '', '', itemId);
+  closeModal('returnModal');
 }
 
 function deleteItem(key) {
   if(!confirm('정말 삭제하시겠습니까?'))return;
   const item=items.find(i=>i._key===key);
-  if(item) addHistoryToFB('del',item.name,item.qty,item.unit,'','삭제','');
+  if(item) addHistoryToFB('del',item.name,item.qty,item.unit,'','삭제','','',key);
   deleteItemFromFB(key);
 }
-// ── 이력 기반 재고 재계산 공통 함수 ──────────────────────────────
-function recalcQtyFromHistory(virtualHistory, nameSet) {
+// ── 이력 기반 재고 계산 (기준점 앵커 방식) ──────────────────────
+// 재고 = (가장 최근 anchor/adjust 이후) 입고·반납(+) − 출고(−)
+// · 이력↔품목은 itemId(_key)로만 매칭 → 품명이 바뀌거나 겹쳐도 안전
+// · 기준점(anchor) 이전 이력은 무시 → 재고조사 마감 이전 소급입력이 재고를 흔들지 않음
+// · itemId 없는 과거 이력은 계산에 포함되지 않음(표시·리포트용으로만 보존)
+function calcStockFrom(item, histList) {
+  if (!item) return 0;
+  const recs = histList.filter(h => h.itemId === item._key);
+  let base = null, baseTs = -1;
+  for (const h of recs) {
+    if ((h.type === 'anchor' || h.type === 'adjust') && (h.ts || 0) >= baseTs) {
+      base = h.amount || 0; baseTs = h.ts || 0;
+    }
+  }
+  if (base === null) return (item.qty || 0);   // 기준점 없음 → 저장값 유지(안전)
+  let s = base;
+  for (const h of recs) {
+    if ((h.ts || 0) <= baseTs) continue;
+    if (h.type === 'in' || h.type === 'return') s += h.amount || 0;
+    else if (h.type === 'out')                  s -= h.amount || 0;
+    else if (h.type === 'adjust')               s  = h.amount || 0;
+  }
+  return s;
+}
+function calcStock(item) { return calcStockFrom(item, historyData); }
+
+// 가장 최근 기준점 시각 (재고조사 마감 이전 날짜 경고용)
+function latestAnchorTs(item) {
+  let ts = 0;
+  historyData.forEach(h => {
+    if (h.itemId === item._key && (h.type === 'anchor' || h.type === 'adjust'))
+      ts = Math.max(ts, h.ts || 0);
+  });
+  return ts;
+}
+
+// 모든 품목의 item.qty 를 이력 기준값과 일치시킴 (마이그레이션 이후에만 동작)
+let _reconciling = false;
+function reconcileStock() {
+  if (!isMigrated() || _reconciling || !items.length) return;
+  _reconciling = true;
+  try {
+    items.forEach(it => {
+      const s = calcStock(it);
+      if (s !== (it.qty || 0)) fbUpdate(fbRef(db, 'items/' + it._key), { qty: s });
+    });
+  } finally { _reconciling = false; }
+}
+
+// 이력 삭제/수정 시 영향 품목의 변경 미리보기 (itemId 기준)
+function recalcQtyFromHistory(virtualHistory, keyOrNameSet) {
   const updates = [];
-  nameSet.forEach(name => {
-    const item = items.find(i => i.name === name);
-    if (!item) return;
-    const calcQty = calcQtyByHistory(name, virtualHistory);
+  items.forEach(item => {
+    if (keyOrNameSet && !keyOrNameSet.has(item.name) && !keyOrNameSet.has(item._key)) return;
+    const calcQty = calcStockFrom(item, virtualHistory);
     if (calcQty !== item.qty) updates.push({ item, calcQty });
   });
   return updates;
-}
-
-// 이력 전체를 시간순으로 재생하여 현재 재고를 계산
-// 규칙: add(신규)·in(입고) → 더하기 / out(출고) → 빼기 / adjust(수동조정) → 절대값 리셋
-// amount=0 인 수정용 이력이 섞여도 안전하게 계산됨
-function calcQtyByHistory(name, histList) {
-  const sorted = [...histList]
-    .filter(h => h.name === name && ['add','in','out','adjust'].includes(h.type))
-    .sort((a, b) => (a.ts || 0) - (b.ts || 0));
-
-  let qty = 0;
-  for (const h of sorted) {
-    const amt = h.amount || 0;
-    if (h.type === 'add')         qty += amt;   // 신규 등록 = 더하기
-    else if (h.type === 'in')     qty += amt;   // 입고 = 더하기
-    else if (h.type === 'out')    qty -= amt;   // 출고 = 빼기
-    else if (h.type === 'adjust') qty = amt;    // 수동조정 = 절대값으로 리셋
-  }
-  return Math.max(0, qty);
 }
 
 let pendingDelHistKey = '';
@@ -1026,10 +1144,10 @@ function confirmDelHistAuth() {
 
 function execDeleteHistory(key) {
   const target = historyData.find(h => h._key === key);
-  // 재고에 영향을 주는 모든 타입(add/in/out/adjust) 삭제 시 재고 재계산
-  if (target && target.name && ['in','out','add','adjust'].includes(target.type)) {
+  // 재고에 영향을 주는 모든 타입 삭제 시 재고 재계산
+  if (target && target.name && ['in','out','add','adjust','return','anchor'].includes(target.type)) {
     const virtualHistory = historyData.filter(h => h._key !== key);
-    const updates = recalcQtyFromHistory(virtualHistory, new Set([target.name]));
+    const updates = recalcQtyFromHistory(virtualHistory, new Set([target.name, target.itemId]));
     if (updates.length > 0) {
       const lines = updates.map(u =>
         `• ${u.item.name}: ${u.item.qty}개 → ${u.calcQty}개`).join('\n');
@@ -1073,6 +1191,8 @@ function openHistEditForm(key) {
   document.getElementById('heName').value = h.name || '';
   document.getElementById('heAmount').value = h.amount || 0;
   document.getElementById('heType').value = h.type || 'out';
+  // 기준점·조정 레코드는 유형 변경 금지 (변경 시 재고 계산이 깨짐)
+  document.getElementById('heType').disabled = (h.type === 'anchor' || h.type === 'adjust');
   document.getElementById('heWho').value = h.who || '';
   document.getElementById('hePurpose').value = h.purpose || '';
   // 일시 변환 (ts → datetime-local 형식)
@@ -1106,7 +1226,16 @@ function saveHistEdit() {
   };
   if (!newData.name) { alert('품명을 입력해주세요.'); return; }
 
-  // 재고 반영 여부 (체크박스)
+  // 재고조사 마감(기준점) 이전 날짜로 옮기는 경우 경고
+  if (newTs && isMigrated()) {
+    const it = items.find(i => i.name === newData.name);
+    const aTs = it ? latestAnchorTs(it) : 0;
+    if (aTs && newTs <= aTs) {
+      if (!confirm(`이 날짜는 마지막 재고조사 마감(${new Date(aTs).toLocaleDateString('ko-KR')}) 이전입니다.\n\n기록은 저장되지만 재고 수량에는 반영되지 않습니다. 계속하시겠습니까?`)) return;
+    }
+  }
+
+  // 재고 반영 여부 (체크박스). 마이그레이션 이후에는 이력이 항상 우선이므로 자동 정합됨.
   const applyStock = document.getElementById('heApplyStock').checked;
 
   if (applyStock) {
@@ -1114,6 +1243,7 @@ function saveHistEdit() {
     const orig = historyData.find(h => h._key === key);
     const affectedNames = new Set();
     if (orig && orig.name) affectedNames.add(orig.name);
+    if (orig && orig.itemId) affectedNames.add(orig.itemId);
     if (newData.name) affectedNames.add(newData.name);
 
     // 수정 내용을 메모리에 반영한 가상 이력 생성
@@ -1227,8 +1357,8 @@ function openQtyManualForm(key) {
   if (!item) return;
   document.getElementById('qtyManualKey').value = key;
   document.getElementById('qtyManualItemName').textContent = '📦 ' + item.name + (item.team ? '  |  ' + item.team : '');
-  document.getElementById('qtyManualCurrent').textContent = (item.qty || 0) + '개';
-  document.getElementById('qtyManualInput').value = item.qty || 0;
+  document.getElementById('qtyManualCurrent').textContent = displayQty(item) + '개';
+  document.getElementById('qtyManualInput').value = displayQty(item);
   document.getElementById('qtyManualReason').value = '';
   document.getElementById('qtyManualModal').classList.add('active');
   setTimeout(() => document.getElementById('qtyManualInput').focus(), 100);
@@ -1242,12 +1372,12 @@ function saveQtyManual() {
   if (!reason) { alert('수정 사유를 입력해주세요.'); return; }
   const item = items.find(i => i._key === key);
   if (!item) return;
-  const diff = newQty - (item.qty || 0);
+  const diff = newQty - displayQty(item);
   // Firebase 재고 수동 업데이트
   fbUpdate(fbRef(db, 'items/' + key), { qty: newQty, manualQty: true });
   // 조정 이력: amount에 조정 후 절대값(newQty) 저장 → 재계산 시 기준점으로 사용
   addHistoryToFB('adjust', item.name, newQty, item.unit || '', '관리자',
-    `수동 조정: ${item.qty}→${newQty} (${diff >= 0 ? '+' : ''}${diff}) / 사유: ${reason}`, '');
+    `수동 조정: ${item.qty}→${newQty} (${diff >= 0 ? '+' : ''}${diff}) / 사유: ${reason}`, '', '', key);
   closeModal('qtyManualModal');
   alert(`✅ ${item.name} 수량이 ${newQty}개로 수정되었습니다.`);
 }
@@ -1313,6 +1443,83 @@ function confirmSync() {
 
 function closeModal(id){document.getElementById(id).classList.remove('active');}
 
+// ── 기준점 설정(마이그레이션) / 재고조사 마감 ──────────────────────
+function maybeShowMigrateBanner() {
+  const b = document.getElementById('migrateBanner');
+  if (b) b.classList.toggle('show', !isMigrated());
+}
+
+let _anchorMode = 'migrate'; // 'migrate' | 'closeout'
+function openMigrateModal() { _anchorMode = 'migrate'; openAnchorModal(); }
+function openCloseoutModal() {
+  if (!isMigrated()) { alert('먼저 상단 배너에서 [기준점 설정하기]를 완료해주세요.'); return; }
+  _anchorMode = 'closeout'; openAnchorModal();
+}
+
+function openAnchorModal() {
+  const isMig = _anchorMode === 'migrate';
+  document.getElementById('anchorModalTitle').textContent = isMig ? '🛠️ 재고 기준점 최초 설정' : '📸 재고조사 마감 (기준점 갱신)';
+  document.getElementById('anchorModalDesc').textContent = isMig
+    ? '지금 화면의 재고 수량을 "기준점"으로 고정합니다. 이후 재고는 (이 시점 이후) 입고·반납−출고로 계산됩니다. 현재 수량은 바뀌지 않습니다.'
+    : '지금 재고 수량을 새 기준점으로 고정합니다. 이 시점 이전 날짜로 입력된 입·출고는 재고 수량에 반영되지 않습니다.';
+  document.getElementById('anchorReason').value = isMig ? '기준점 최초 설정' : '';
+  document.getElementById('anchorBackupDone').checked = false;
+  const list = [...items].sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko'));
+  document.getElementById('anchorCount').textContent = list.length;
+  document.getElementById('anchorPreviewList').innerHTML = list.map(it => {
+    const cur = isMig ? (it.qty||0) : calcStock(it);
+    return `<div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding:2px 0"><span>${it.name}${it.team?` <span style="color:var(--text3)">· ${it.team}</span>`:''}</span><b>${cur}개</b></div>`;
+  }).join('');
+  const pw = getAdminPw();
+  document.getElementById('anchorAuthArea').style.display = pw ? 'block' : 'none';
+  if (pw) { document.getElementById('anchorPwInput').value=''; document.getElementById('anchorPwError').style.display='none'; }
+  document.getElementById('anchorConfirmBtn').disabled = false;
+  document.getElementById('anchorModal').classList.add('active');
+}
+
+function confirmAnchor() {
+  const btn = document.getElementById('anchorConfirmBtn');
+  if (btn.disabled) return;
+  const pw = getAdminPw();
+  if (pw && document.getElementById('anchorPwInput').value !== pw) {
+    document.getElementById('anchorPwError').style.display = 'block'; return;
+  }
+  if (!document.getElementById('anchorBackupDone').checked) { alert('백업 확인 체크박스를 선택해주세요.'); return; }
+  const reason = document.getElementById('anchorReason').value.trim() || (_anchorMode==='migrate'?'기준점 최초 설정':'재고조사 마감');
+  const isMig = _anchorMode === 'migrate';
+  if (!confirm(`${items.length}개 품목의 기준점을 생성합니다.\n사유: ${reason}\n\n계속하시겠습니까?`)) return;
+  btn.disabled = true;
+  const t0 = Date.now();
+  items.forEach((it, i) => {
+    const amt = isMig ? (it.qty||0) : calcStock(it);
+    fbPush(fbRef(db,'history'), {
+      type:'anchor', name: it.name, amount: amt, unit: it.unit||'', who:'관리자',
+      purpose: (isMig?'마이그레이션 기준점: ':'재고조사 마감: ') + reason, note:'',
+      time: now(), ts: t0 + i, itemId: it._key
+    });
+    if (isMig && amt !== (it.qty||0)) fbUpdate(fbRef(db,'items/'+it._key), {qty: amt});
+  });
+  fbUpdate(fbRef(db,'meta'), { migratedV2: t0, lastCloseout: t0, lastCloseoutReason: reason });
+  closeModal('anchorModal');
+  alert('✅ 완료되었습니다. 이후 재고는 이력 기준으로 자동 계산됩니다.');
+}
+
+function exportFullBackup() {
+  const url = window._dbUrl;
+  if (!url) { alert('DB 주소를 찾을 수 없습니다.'); return; }
+  fetch(url.replace(/\/$/,'') + '/.json')
+    .then(r => r.json())
+    .then(data => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `재고관리_전체백업_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+    })
+    .catch(e => alert('백업 실패: ' + e.message));
+}
+
 // ── 엑셀 다운로드 ─────────────────────────────────────────────
 function openExcelModal() {
   // 기본값: 이번 달
@@ -1352,17 +1559,20 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function calcQtyAtDate(itemName, targetTs) {
-  // 현재 재고에서 targetTs 이후 이력을 역산
   const item = items.find(i => i.name === itemName);
   if (!item) return 0;
+  // targetTs 이전까지의 이력만으로 계산 (기준점이 있으면 그 기준으로)
+  const upto = historyData.filter(h => h.itemId === item._key && (h.ts||0) <= targetTs);
+  if (upto.some(h => h.type === 'anchor' || h.type === 'adjust')) {
+    return calcStockFrom(item, upto);
+  }
+  // 기준점이 targetTs 이후 → 현재값에서 역산 (근사)
   let qty = item.qty;
-  historyData
-    .filter(h => h.name === itemName && h.ts > targetTs)
-    .forEach(h => {
-      if (h.type === 'out') qty += (h.amount || 0); // 출고 되돌림
-      if (h.type === 'in')  qty -= (h.amount || 0); // 입고 되돌림
-    });
-  return Math.max(0, qty);
+  historyData.filter(h => h.itemId === item._key && (h.ts||0) > targetTs).forEach(h => {
+    if (h.type === 'out') qty += (h.amount || 0);
+    else if (h.type === 'in' || h.type === 'return') qty -= (h.amount || 0);
+  });
+  return qty;
 }
 
 function exportExcel() {
@@ -1384,7 +1594,7 @@ function exportExcel() {
   // ── 재고현황 시트 ──────────────────────────────────────────────
   const invHeaders = ['No','품명','팀명','담당자','수량','최소기준','비고','상태'];
   const invRows = items.map((item, i) => {
-    let qty = item.qty;
+    let qty = calcStock(item);
     if (invMode === 'custom' && invDateVal) {
       qty = calcQtyAtDate(item.name, invTargetTs);
     }
@@ -1415,14 +1625,27 @@ function exportExcel() {
   outSheet['!cols']=[{wch:5},{wch:18},{wch:20},{wch:8},{wch:12},{wch:25}];
   XLSX.utils.book_append_sheet(wb, outSheet, '📋 출고이력');
 
-  // ── 입고이력 시트 ──────────────────────────────────────────────
-  const inHeaders = ['No','날짜','품명','수량','입고처리자','메모'];
+  // ── 입고이력 시트 (반납 제외) ─────────────────────────────────
+  const inHeaders = ['No','날짜','구분','품명','수량','입고처리자','메모'];
   const inRows = filteredHist.filter(h=>h.type==='in')
-    .map((h,i)=>[i+1, h.time, h.name, h.amount, h.who||'', h.purpose||'']);
+    .map((h,i)=>{
+      const kind = (h.subtype==='new'||(h.purpose||'').includes('신규')) ? '신규' : '재구매';
+      return [i+1, h.time, kind, h.name, h.amount, h.who||'', h.purpose||''];
+    });
   const inSheet = XLSX.utils.aoa_to_sheet([
-    [`📥 입고이력 (${rangeLabel})`],[],inHeaders,...inRows]);
-  inSheet['!cols']=[{wch:5},{wch:18},{wch:20},{wch:8},{wch:12},{wch:25}];
+    [`📥 입고이력 (${rangeLabel}) — 반납 제외`],[],inHeaders,...inRows]);
+  inSheet['!cols']=[{wch:5},{wch:18},{wch:8},{wch:20},{wch:8},{wch:12},{wch:25}];
   XLSX.utils.book_append_sheet(wb, inSheet, '📥 입고이력');
+
+  // ── 반납이력 시트 ─────────────────────────────────────────────
+  const retRows = filteredHist.filter(h=>h.type==='return')
+    .map((h,i)=>[i+1, h.time, h.name, h.amount, h.who||'', h.purpose||'']);
+  if (retRows.length) {
+    const retSheet = XLSX.utils.aoa_to_sheet([
+      [`↩ 반납이력 (${rangeLabel})`],[],['No','날짜','품명','수량','반납처리자','메모'],...retRows]);
+    retSheet['!cols']=[{wch:5},{wch:18},{wch:20},{wch:8},{wch:12},{wch:25}];
+    XLSX.utils.book_append_sheet(wb, retSheet, '↩ 반납이력');
+  }
 
   const fileName = `홍보물품재고관리_${invLabel}.xlsx`;
   XLSX.writeFile(wb, fileName, {bookType:'xlsx'});
@@ -1536,7 +1759,7 @@ document.getElementById('histDateTo').addEventListener('change',renderHistory);
 document.querySelectorAll('.modal-overlay').forEach(el=>
   el.addEventListener('click',e=>{if(e.target===el)closeModal(el.id);}));
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape')['addModal','takeModal','restoreModal','editAuthModal','delHistAuthModal','qtyManualModal','qtyManualAuthModal','syncModal'].forEach(id=>closeModal(id));
+  if(e.key==='Escape')['addModal','takeModal','restoreModal','returnModal','editAuthModal','delHistAuthModal','qtyManualModal','qtyManualAuthModal','syncModal','anchorModal'].forEach(id=>closeModal(id));
 });
 </script>
 
@@ -1589,6 +1812,42 @@ document.addEventListener('keydown',e=>{
     <div class="modal-actions">
       <button class="btn btn-primary" id="syncConfirmBtn" style="flex:1;background:var(--warn)" onclick="confirmSync()" disabled>동기화 실행</button>
       <button class="btn btn-ghost" onclick="closeModal('syncModal')">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 기준점 설정 / 재고조사 마감 모달 -->
+<div class="modal-overlay" id="anchorModal">
+  <div class="modal">
+    <div class="modal-title" id="anchorModalTitle">📸 재고 기준점 설정</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:10px" id="anchorModalDesc"></p>
+    <div style="font-size:12px;color:var(--warn);background:rgba(234,179,8,.08);border-radius:7px;padding:10px 12px;margin-bottom:12px;line-height:1.7">
+      ⚠️ 실행 전 반드시 <b>전체 백업</b>을 받으세요. 이 작업은 되돌릴 수 없습니다(수동 복구만 가능).
+    </div>
+    <button class="btn btn-ghost" style="width:100%;margin-bottom:12px" onclick="exportFullBackup()">💾 전체 데이터 백업 (JSON 다운로드)</button>
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">📋 기준점으로 고정될 수량 (<span id="anchorCount">0</span>개 품목)</div>
+    <div id="anchorPreviewList" style="font-size:12px;background:var(--surface2);border-radius:7px;padding:10px 12px;max-height:200px;overflow-y:auto;line-height:1.9"></div>
+    <div class="form-group" style="margin-top:12px">
+      <label class="form-label">사유 / 기준일 메모</label>
+      <input class="form-input" id="anchorReason" placeholder="예: 2026-08-24 재고조사 마감">
+    </div>
+    <div id="anchorAuthArea" style="display:none">
+      <div class="form-group">
+        <label class="form-label">관리자 암호 입력</label>
+        <div class="pw-input-wrap">
+          <input class="form-input" id="anchorPwInput" type="password" placeholder="관리자 암호" style="width:100%;padding-right:36px">
+          <button class="pw-toggle" onclick="togglePw('anchorPwInput',this)">👁️</button>
+        </div>
+      </div>
+      <div id="anchorPwError" style="font-size:12px;color:var(--danger);margin-top:-6px;margin-bottom:8px;display:none">암호가 틀렸습니다.</div>
+    </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);margin:6px 0 12px">
+      <input type="checkbox" id="anchorBackupDone" style="width:15px;height:15px;margin-top:1px;cursor:pointer">
+      <span>백업을 받았고, 위 수량으로 재고를 고정하는 데 동의합니다.</span>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="anchorConfirmBtn" style="flex:1" onclick="confirmAnchor()">실행</button>
+      <button class="btn btn-ghost" onclick="closeModal('anchorModal')">취소</button>
     </div>
   </div>
 </div>
@@ -1668,6 +1927,9 @@ document.addEventListener('keydown',e=>{
         <select class="form-input" id="heType" style="width:100%">
           <option value="out">출고</option>
           <option value="in">입고</option>
+          <option value="return">반납</option>
+          <option value="adjust">조정</option>
+          <option value="anchor">기준점</option>
           <option value="add">추가</option>
           <option value="del">삭제</option>
         </select>
