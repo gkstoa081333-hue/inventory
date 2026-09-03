@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>홍보물품 재고관리 (공유형)</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -250,8 +251,10 @@
 
   @media(max-width:700px){
     .stats-grid{grid-template-columns:repeat(2,1fr);}
-    .hist-header,.hist-row{grid-template-columns:50px 1fr 60px 90px 40px 40px;}
-    .hist-header>:nth-child(n+5),.hist-row>:nth-child(n+5){display:none;}
+    /* 좁은 화면: 담당자(4)·일시(6)만 숨김. 목적/메모(반납 버튼 포함)·삭제·수정은 유지 */
+    .hist-header,.hist-row{grid-template-columns:46px 1fr 52px 1fr 44px 44px;}
+    .hist-header>:nth-child(4),.hist-row>:nth-child(4),
+    .hist-header>:nth-child(6),.hist-row>:nth-child(6){display:none;}
   }
 </style>
 </head>
@@ -572,6 +575,11 @@ function initFirebase() {
   // 메타(마이그레이션 플래그 등) 실시간 수신
   fbOnValue(fbRef(db, 'meta'), snap => {
     metaData = snap.val() || {};
+    // 예전에 localStorage에만 있던 관리자 암호를 meta로 1회 승격 → 다른 기기(태블릿 등)에서도 게이트가 걸림
+    const localPw = localStorage.getItem(ADMIN_PW_KEY);
+    if (localPw && typeof metaData.adminPw !== 'string' && fbUpdate) {
+      fbUpdate(fbRef(db, 'meta'), { adminPw: localPw });
+    }
     reconcileStock();
     render();
     maybeShowMigrateBanner();
@@ -1270,10 +1278,14 @@ function saveHistEdit() {
 
 
 function getAdminPw() {
-  return localStorage.getItem(ADMIN_PW_KEY) || '';
+  // 암호는 Firebase meta에 저장 → 모든 기기 공유. (localStorage는 기기별이라 PC에서만 설정되고 태블릿에선 게이트가 뚫렸음)
+  // ponytail: 평문 저장. DB가 완전 개방이라 한계 있음 — 근본 해결은 변경사항.md §6의 Firebase 인증 규칙.
+  if (metaData && typeof metaData.adminPw === 'string') return metaData.adminPw;
+  return localStorage.getItem(ADMIN_PW_KEY) || '';  // meta에 아직 없을 때만(마이그레이션 전)
 }
 function setAdminPw(pw) {
-  localStorage.setItem(ADMIN_PW_KEY, pw);
+  localStorage.setItem(ADMIN_PW_KEY, pw);           // 로컬 캐시
+  if (fbUpdate) fbUpdate(fbRef(db, 'meta'), { adminPw: pw });
 }
 function togglePw(inputId, btn) {
   const el = document.getElementById(inputId);
