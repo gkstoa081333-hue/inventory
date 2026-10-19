@@ -537,6 +537,7 @@
 <script>
 // ── 전역 상태 ─────────────────────────────────────────────────
 const ADMIN_PW_KEY = 'gongju_inventory_admin_pw';
+const APP_VERSION = 20261020; // 배포할 때마다 올릴 것 (구버전 화면 자동 새로고침용)
 let items = [];
 let historyData = [];
 let metaData = {};
@@ -579,6 +580,13 @@ function initFirebase() {
     const localPw = localStorage.getItem(ADMIN_PW_KEY);
     if (localPw && typeof metaData.adminPw !== 'string' && fbUpdate) {
       fbUpdate(fbRef(db, 'meta'), { adminPw: localPw });
+    }
+    // 구버전 화면(켜둔 채 방치된 탭·캐시) 방지: 더 새 버전이 배포돼 있으면 1회 새로고침
+    if ((metaData.appVersion || 0) < APP_VERSION) {
+      fbUpdate(fbRef(db, 'meta'), { appVersion: APP_VERSION });
+    } else if (metaData.appVersion > APP_VERSION && !sessionStorage.getItem('reloadFor' + metaData.appVersion)) {
+      sessionStorage.setItem('reloadFor' + metaData.appVersion, '1');
+      location.reload();
     }
     reconcileStock();
     render();
@@ -1067,10 +1075,21 @@ function deleteItem(key) {
 // 재고 = (가장 최근 anchor/adjust 이후) 입고·반납(+) − 출고(−)
 // · 이력↔품목은 itemId(_key)로만 매칭 → 품명이 바뀌거나 겹쳐도 안전
 // · 기준점(anchor) 이전 이력은 무시 → 재고조사 마감 이전 소급입력이 재고를 흔들지 않음
-// · itemId 없는 과거 이력은 계산에 포함되지 않음(표시·리포트용으로만 보존)
+// · itemId 없는 이력(구버전 화면에서 입력된 건)은 품명이 하나뿐인 품목에 한해 품명으로 매칭
+//   (동명 품목이 2개 이상이면 특정 불가 → 계산 제외)
+let _nameMap = null, _nameMapFor = null;
+function recItemId(h) {
+  if (h.itemId) return h.itemId;
+  if (_nameMapFor !== items) {
+    _nameMap = new Map();
+    items.forEach(i => _nameMap.set(i.name, _nameMap.has(i.name) ? null : i._key));
+    _nameMapFor = items;
+  }
+  return _nameMap.get(h.name) || null;
+}
 function calcStockFrom(item, histList) {
   if (!item) return 0;
-  const recs = histList.filter(h => h.itemId === item._key);
+  const recs = histList.filter(h => recItemId(h) === item._key);
   let base = null, baseTs = -1;
   for (const h of recs) {
     if ((h.type === 'anchor' || h.type === 'adjust') && (h.ts || 0) >= baseTs) {
@@ -1093,7 +1112,7 @@ function calcStock(item) { return calcStockFrom(item, historyData); }
 function latestAnchorTs(item) {
   let ts = 0;
   historyData.forEach(h => {
-    if (h.itemId === item._key && (h.type === 'anchor' || h.type === 'adjust'))
+    if (recItemId(h) === item._key && (h.type === 'anchor' || h.type === 'adjust'))
       ts = Math.max(ts, h.ts || 0);
   });
   return ts;
@@ -1574,13 +1593,13 @@ function calcQtyAtDate(itemName, targetTs) {
   const item = items.find(i => i.name === itemName);
   if (!item) return 0;
   // targetTs 이전까지의 이력만으로 계산 (기준점이 있으면 그 기준으로)
-  const upto = historyData.filter(h => h.itemId === item._key && (h.ts||0) <= targetTs);
+  const upto = historyData.filter(h => recItemId(h) === item._key && (h.ts||0) <= targetTs);
   if (upto.some(h => h.type === 'anchor' || h.type === 'adjust')) {
     return calcStockFrom(item, upto);
   }
   // 기준점이 targetTs 이후 → 현재값에서 역산 (근사)
   let qty = item.qty;
-  historyData.filter(h => h.itemId === item._key && (h.ts||0) > targetTs).forEach(h => {
+  historyData.filter(h => recItemId(h) === item._key && (h.ts||0) > targetTs).forEach(h => {
     if (h.type === 'out') qty += (h.amount || 0);
     else if (h.type === 'in' || h.type === 'return') qty -= (h.amount || 0);
   });
