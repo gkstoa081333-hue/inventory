@@ -356,6 +356,7 @@
       <button class="btn btn-ghost" onclick="openSyncModal()" title="재고 동기화(이력과 재대조)" style="font-size:12px;padding:6px 12px;color:var(--warn);border-color:var(--warn)">🔄 재고 동기화</button>
       <button class="setting-btn" onclick="openPwSetModal()" title="관리자 암호 설정">⚙️</button>
     </div>
+    <div id="histStock" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:10px;font-size:13px"></div>
     <div class="history-wrap">
       <div class="hist-header">
         <div onclick="histSortBy('type')" style="cursor:pointer" title="정렬">유형 ↕</div>
@@ -537,7 +538,7 @@
 <script>
 // ── 전역 상태 ─────────────────────────────────────────────────
 const ADMIN_PW_KEY = 'gongju_inventory_admin_pw';
-const APP_VERSION = 20261020; // 배포할 때마다 올릴 것 (구버전 화면 자동 새로고침용)
+const APP_VERSION = 20261021; // 배포할 때마다 올릴 것 (구버전 화면 자동 새로고침용)
 let items = [];
 let historyData = [];
 let metaData = {};
@@ -565,6 +566,7 @@ function initFirebase() {
     items = val ? Object.entries(val).map(([k,v]) => ({...v, _key: k})) : [];
     reconcileStock();
     render();
+    renderHistory();   // 사용이력 검색 시 표시되는 현재 재고 갱신
     document.getElementById('loadingOverlay').style.display = 'none';
     setConn(true);
   }, err => {
@@ -620,6 +622,7 @@ function now() {
   return new Date().toLocaleString('ko-KR',
     {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
 }
+function normName(s) { return (s||'').replace(/\s+/g,'').toLowerCase(); }
 function displayQty(item) { return isMigrated() ? calcStock(item) : (item.qty || 0); }
 function getStatus(item) {
   const q = displayQty(item);
@@ -815,6 +818,14 @@ function renderHistory() {
     const isNew = h.subtype === 'new' || (!h.subtype && (h.purpose||'').includes('신규'));
     return isNew ? { label: '신규입고', cls: 'type-add' } : { label: '추가입고', cls: 'type-in' };
   }
+  // 검색어에 해당하는 품목의 현재 재고 표시
+  const stockEl = document.getElementById('histStock');
+  const hits = search ? items.filter(i => normName(i.name).includes(normName(search))) : [];
+  stockEl.style.display = hits.length ? 'flex' : 'none';
+  const stColor = { ok: 'var(--ok)', warn: 'var(--warn)', out: 'var(--danger)' };
+  stockEl.innerHTML = '<span style="color:var(--text2);align-self:center">📦 현재 재고</span>' +
+    hits.map(i => `<span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 10px">${i.name} <b style="color:${stColor[getStatus(i)]}">${displayQty(i)}${i.unit ? ' ' + i.unit : '개'}</b></span>`).join('');
+
   const el = document.getElementById('historyList');
   if (!list.length) { el.innerHTML='<div class="hist-empty">검색 결과가 없습니다.</div>'; return; }
   el.innerHTML = list.map(h=>{
@@ -912,6 +923,11 @@ function saveItem() {
   const name=document.getElementById('fName').value.trim();
   if(!name){alert('품명을 입력해주세요.');return;}
   const key=document.getElementById('editId').value;
+  // 같은 품명(띄어쓰기·대소문자 무시) 중복 등록/변경 금지
+  // (기존 중복 품목은 품명을 안 바꾸는 수정까지 막지 않음)
+  const cur = key && items.find(i => i._key === key);
+  const dup = (!cur || cur.name !== name) && items.find(i => i._key !== key && normName(i.name) === normName(name));
+  if (dup) { alert(`'${dup.name}' 품목이 이미 있습니다.\n\n재구매(추가 입고)라면 기존 품목의 [입고] 버튼을 쓰세요.\n팀이 다른 별개 품목이면 품명을 구분해서 입력해주세요. (예: ${name}(정신건강팀))`); return; }
   if(key) {
     // 수정 모드
     const item = items.find(i=>i._key===key);
@@ -940,9 +956,6 @@ function saveItem() {
     }
   } else {
     // 신규 추가 모드
-    if (items.some(i => i.name === name)) {
-      if (!confirm(`'${name}' 품명의 품목이 이미 있습니다.\n\n· 재구매(추가 입고)라면 [취소] 후 기존 품목의 [입고] 버튼을 쓰세요.\n· 팀이 다른 별개 품목이면 [확인].\n\n새 품목으로 추가할까요?`)) { btn.disabled = false; return; }
-    }
     btn.disabled = true;
     const data={
       name, team:document.getElementById('fTeam').value.trim(),
